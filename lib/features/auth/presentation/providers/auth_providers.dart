@@ -36,19 +36,39 @@ class LoginController extends Notifier<LoginState> {
   AuthRepository get _authRepository => ref.read(authRepositoryProvider);
 
   Future<bool> signIn(String email, String password) async {
-    state = const LoginLoading();
-    try {
-      await _authRepository.signIn(email: email, password: password);
-      state = const LoginIdle();
-      return true; // login exitoso
-    } on AuthException catch (e) {
-      state = LoginError(e.message);
-      return false;
-    } catch (e) {
-      state = LoginError('Ocurrió un error inesperado. Intenta de nuevo.');
-      return false;
+      state = const LoginLoading();
+      try {
+        await _authRepository.signIn(email: email, password: password);
+
+        // Tras autenticar, verificamos que el perfil esté activo.
+        final profileData = await _authRepository.fetchCurrentProfile();
+
+        if (profileData == null) {
+          await _authRepository.signOut();
+          state = const LoginError(
+              'No se encontró el perfil de este usuario. Contacta al administrador.');
+          return false;
+        }
+
+        final isActive = profileData['is_active'] as bool? ?? false;
+        if (!isActive) {
+          // Usuario inhabilitado: cerrar sesión y bloquear acceso.
+          await _authRepository.signOut();
+          state = const LoginError(
+              'Tu cuenta está inhabilitada. Contacta al administrador.');
+          return false;
+        }
+
+        state = const LoginIdle();
+        return true; // login exitoso y usuario activo
+      } on AuthException catch (e) {
+        state = LoginError(e.message);
+        return false;
+      } catch (e) {
+        state = LoginError('Ocurrió un error inesperado. Intenta de nuevo.');
+        return false;
+      }
     }
-  }
 }
 
 /// Provee el controlador de login a la UI.

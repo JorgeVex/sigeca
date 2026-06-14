@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/catalogs/presentation/pages/areas_page.dart';
+import '../../features/catalogs/presentation/pages/ambulances_page.dart';
+import '../catalogs/presentation/pages/supplies_page.dart';
+import '../users/presentation/pages/user_page.dart';
 
 import '../auth/presentation/providers/auth_providers.dart';
 
@@ -89,7 +93,7 @@ class _HomeContent extends StatelessWidget {
               crossAxisCount: 2,
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
-              children: _actionsForRole(profile.role),
+              children: _actionsForRole(profile.role, context),
             ),
           ),
         ],
@@ -129,15 +133,43 @@ class _HomeContent extends StatelessWidget {
   }
 
   /// Devuelve las tarjetas de acción según el rol.
-  List<Widget> _actionsForRole(String role) {
+  List<Widget> _actionsForRole(String role, BuildContext context) {
     switch (role) {
       case 'admin':
-        return const [
-          _ActionCard(icon: Icons.people, label: 'Usuarios'),
-          _ActionCard(icon: Icons.local_hospital, label: 'Áreas'),
-          _ActionCard(icon: Icons.directions_car, label: 'Ambulancias'),
-          _ActionCard(icon: Icons.inventory_2, label: 'Insumos'),
-        ];
+              return [
+                _ActionCard(
+                  icon: Icons.people,
+                  label: 'Usuarios',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const UsersPage()),
+                  ),
+                ),
+                _ActionCard(
+                  icon: Icons.local_hospital,
+                  label: 'Áreas',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AreasPage()),
+                  ),
+                ),
+                _ActionCard(
+                  icon: Icons.directions_car,
+                  label: 'Ambulancias',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AmbulancesPage()),
+                  ),
+                ),  
+                _ActionCard(
+                  icon: Icons.inventory_2,
+                  label: 'Insumos',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SuppliesPage()),
+                  ),
+                ),
+              ];
       case 'jefe':
         return const [
           _ActionCard(icon: Icons.assignment, label: 'Asignaciones'),
@@ -164,14 +196,15 @@ class _HomeContent extends StatelessWidget {
 class _ActionCard extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _ActionCard({required this.icon, required this.label});
+  final VoidCallback? onTap;
+  const _ActionCard({required this.icon, required this.label, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Card(
       elevation: 2,
       child: InkWell(
-        onTap: () {}, // Se conectará cuando construyamos cada feature.
+        onTap: onTap ?? () {},
         borderRadius: BorderRadius.circular(8),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
