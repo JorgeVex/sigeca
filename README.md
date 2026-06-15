@@ -79,7 +79,7 @@ Reglas de negocio destacadas, garantizadas a nivel de base de datos:
 1. Clona el repositorio:
 
    ```bash
-   git clone https://github.com/[TU_USUARIO]/sigeca.git
+   git clone https://github.com/jorgevex/sigeca.git
    cd sigeca
    ```
 
