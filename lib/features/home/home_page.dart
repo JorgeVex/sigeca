@@ -4,6 +4,7 @@ import '../../features/catalogs/presentation/pages/areas_page.dart';
 import '../../features/catalogs/presentation/pages/ambulances_page.dart';
 import '../catalogs/presentation/pages/supplies_page.dart';
 import '../users/presentation/pages/user_page.dart';
+import '../../features/assignments/presentation/pages/assignments_page.dart';
 
 import '../auth/presentation/providers/auth_providers.dart';
 
@@ -171,9 +172,16 @@ class _HomeContent extends StatelessWidget {
                 ),
               ];
       case 'jefe':
-        return const [
-          _ActionCard(icon: Icons.assignment, label: 'Asignaciones'),
-          _ActionCard(icon: Icons.fact_check, label: 'Aprobar reportes'),
+        return [
+          _ActionCard(
+            icon: Icons.assignment,
+            label: 'Asignaciones',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AssignmentsPage()),
+            ),
+          ),
+          const _ActionCard(icon: Icons.fact_check, label: 'Aprobar reportes'),
         ];
       case 'auxiliar':
         return const [

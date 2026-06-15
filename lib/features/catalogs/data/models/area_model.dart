@@ -4,31 +4,32 @@ class AreaModel {
   final String name;
   final String? description;
   final bool isActive;
+  final String category; // 'sala' | 'obligacion'
 
   const AreaModel({
     required this.id,
     required this.name,
     this.description,
     required this.isActive,
+    required this.category,
   });
 
-  /// Construye un AreaModel desde el JSON de Supabase.
   factory AreaModel.fromJson(Map<String, dynamic> json) {
     return AreaModel(
       id: json['id'] as String,
       name: json['name'] as String,
       description: json['description'] as String?,
       isActive: json['is_active'] as bool,
+      category: json['category'] as String? ?? 'obligacion',
     );
   }
 
-  /// Convierte el modelo a JSON para enviarlo a Supabase
-  /// (sin id ni created_at: esos los genera la base de datos).
   Map<String, dynamic> toJson() {
     return {
       'name': name,
       'description': description,
       'is_active': isActive,
+      'category': category,
     };
   }
 }
