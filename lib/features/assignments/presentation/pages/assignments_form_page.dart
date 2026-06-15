@@ -28,16 +28,12 @@ class _AssignmentFormPageState extends ConsumerState<AssignmentFormPage> {
   final Map<String, int> _selectedSupplies = {};
   final Map<String, TextEditingController> _qtyControllers = {};
 
-  final _responsibilitiesController = TextEditingController();
-  final _objectivesController = TextEditingController();
   final _observationsController = TextEditingController();
 
   bool _saving = false;
 
   @override
   void dispose() {
-    _responsibilitiesController.dispose();
-    _objectivesController.dispose();
     _observationsController.dispose();
     for (final c in _qtyControllers.values) {
       c.dispose();
@@ -99,30 +95,16 @@ class _AssignmentFormPageState extends ConsumerState<AssignmentFormPage> {
             _buildSuppliesCheckboxes(suppliesAsync),
             const SizedBox(height: 24),
 
-            // --- Notas ---
-            TextField(
-              controller: _responsibilitiesController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Responsabilidades (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _objectivesController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Objetivos (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
+// --- Indicaciones o advertencias ---
+            const Text('Indicaciones o advertencias',
+                style:
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
             TextField(
               controller: _observationsController,
-              maxLines: 2,
+              maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'Observaciones (opcional)',
+                hintText: 'Ej: revisar fechas de vencimiento de insumos…',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -424,12 +406,6 @@ class _AssignmentFormPageState extends ConsumerState<AssignmentFormPage> {
         areaIds: _selectedAreas.toList(),
         ambulanceIds: _selectedAmbulances.toList(),
         supplies: _selectedSupplies,
-        responsibilities: _responsibilitiesController.text.trim().isEmpty
-            ? null
-            : _responsibilitiesController.text.trim(),
-        objectives: _objectivesController.text.trim().isEmpty
-            ? null
-            : _objectivesController.text.trim(),
         observations: _observationsController.text.trim().isEmpty
             ? null
             : _observationsController.text.trim(),
