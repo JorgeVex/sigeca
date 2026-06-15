@@ -142,8 +142,4 @@ El proyecto está en desarrollo activo. Funcionalidades implementadas hasta el m
 
 ## Autor
 
-[TU_NOMBRE]
-
-## Licencia
-
-[Define la licencia que prefieras, por ejemplo MIT]
+[Jorge_Hernán_Velasco_Gómez]
