@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'assignments_form_page.dart';
+import '../../data/models/assignment_model.dart';
 import '../providers/assignment_providers.dart';
+import 'assignments_form_page.dart';
+import 'assignments_detail_page.dart';
 
-/// Pantalla de gestión de asignaciones (jefe de enfermería).
-/// Muestra las responsabilidades del periodo seleccionado.
+/// Pantalla de gestión de asignaciones (jefe).
+/// Muestra una carpeta por auxiliar en el periodo seleccionado.
 class AssignmentsPage extends ConsumerWidget {
   const AssignmentsPage({super.key});
 
@@ -31,10 +33,8 @@ class AssignmentsPage extends ConsumerWidget {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const AssignmentFormPage(),
-            ),
-          );  
+            MaterialPageRoute(builder: (_) => const AssignmentFormPage()),
+          );
         },
         icon: const Icon(Icons.add),
         label: const Text('Nueva'),
@@ -64,7 +64,7 @@ class AssignmentsPage extends ConsumerWidget {
             ),
           ),
 
-          // --- Lista de asignaciones ---
+          // --- Lista de carpetas ---
           Expanded(
             child: assignmentsAsync.when(
               loading: () =>
@@ -99,19 +99,23 @@ class AssignmentsPage extends ConsumerWidget {
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundColor: Colors.teal.shade100,
-                        child: const Icon(Icons.assignment,
+                        child: const Icon(Icons.folder_shared,
                             color: Colors.teal),
                       ),
-                      title: Text(a.auxiliarName),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Área: ${a.areaName}'),
-                          if (a.ambulancePlate != null)
-                            Text('Ambulancia: ${a.ambulancePlate}'),
-                        ],
-                      ),
-                      isThreeLine: a.ambulancePlate != null,
+                      title: Text(a.auxiliarName,
+                          style:
+                              const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(_buildSummary(a)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                AssignmentDetailPage(assignment: a),
+                          ),
+                        );
+                      },
                     );
                   },
                 );
@@ -123,7 +127,19 @@ class AssignmentsPage extends ConsumerWidget {
     );
   }
 
-  /// Selector simple de mes y año.
+  /// Resumen corto de lo que tiene la carpeta.
+  String _buildSummary(AssignmentModel a) {
+    final parts = <String>[];
+    if (a.areas.isNotEmpty) {
+      parts.add('${a.areas.length} área(s)');
+    }
+    if (a.ambulances.isNotEmpty) {
+      parts.add('${a.ambulances.length} ambulancia(s)');
+    }
+    return parts.isEmpty ? 'Sin elementos' : parts.join(' · ');
+  }
+
+  /// Selector de mes y año.
   void _pickPeriod(BuildContext context, WidgetRef ref, Period current) {
     int selectedYear = current.year;
     int selectedMonth = current.month;

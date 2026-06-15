@@ -24,19 +24,17 @@ class SelectedPeriodNotifier extends Notifier<Period> {
     return Period(now.year, now.month);
   }
 
-  /// Cambia el periodo mostrado.
   void setPeriod(int year, int month) {
     state = Period(year, month);
   }
 }
 
-/// Periodo actualmente seleccionado para ver asignaciones.
+/// Periodo actualmente seleccionado.
 final selectedPeriodProvider =
     NotifierProvider<SelectedPeriodNotifier, Period>(
         SelectedPeriodNotifier.new);
 
-/// Lista de asignaciones del periodo seleccionado.
-/// Se recarga automáticamente cuando cambia el periodo.
+/// Lista de carpetas del periodo seleccionado.
 final assignmentsListProvider =
     FutureProvider<List<AssignmentModel>>((ref) async {
   final period = ref.watch(selectedPeriodProvider);
@@ -44,14 +42,23 @@ final assignmentsListProvider =
   return repository.fetchByPeriod(year: period.year, month: period.month);
 });
 
-/// Lista de auxiliares activos (para el dropdown del formulario).
+/// Lista de TODOS los auxiliares activos.
 final auxiliaresListProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final repository = ref.watch(assignmentRepositoryProvider);
   return repository.fetchAuxiliares();
 });
 
-/// IDs de áreas ya asignadas en el periodo seleccionado.
+/// IDs de auxiliares que YA tienen carpeta en el periodo.
+final assignedAuxiliarIdsProvider =
+    FutureProvider<Set<String>>((ref) async {
+  final period = ref.watch(selectedPeriodProvider);
+  final repository = ref.watch(assignmentRepositoryProvider);
+  return repository.fetchAssignedAuxiliarIds(
+      year: period.year, month: period.month);
+});
+
+/// IDs de áreas ya asignadas en el periodo (para filtrar disponibles).
 final assignedAreaIdsProvider = FutureProvider<Set<String>>((ref) async {
   final period = ref.watch(selectedPeriodProvider);
   final repository = ref.watch(assignmentRepositoryProvider);
@@ -59,11 +66,18 @@ final assignedAreaIdsProvider = FutureProvider<Set<String>>((ref) async {
       year: period.year, month: period.month);
 });
 
-/// IDs de ambulancias ya asignadas en el periodo seleccionado.
+/// IDs de ambulancias ya asignadas en el periodo.
 final assignedAmbulanceIdsProvider =
     FutureProvider<Set<String>>((ref) async {
   final period = ref.watch(selectedPeriodProvider);
   final repository = ref.watch(assignmentRepositoryProvider);
   return repository.fetchAssignedAmbulanceIds(
       year: period.year, month: period.month);
+});
+
+/// Insumos de una carpeta específica (se carga al abrir el detalle).
+final assignmentSuppliesProvider = FutureProvider.family
+    .autoDispose<List<dynamic>, String>((ref, assignmentId) async {
+  final repository = ref.watch(assignmentRepositoryProvider);
+  return repository.fetchSupplies(assignmentId);
 });

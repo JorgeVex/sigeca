@@ -3,14 +3,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/assignment_model.dart';
 import '../models/assignment_supply_model.dart';
 
-/// Acceso a datos para asignaciones (responsabilidades).
+/// Acceso a datos para asignaciones (carpetas).
 class AssignmentRepository {
   final SupabaseClient _client;
 
   AssignmentRepository(this._client);
 
-  /// READ: trae las asignaciones de un periodo, con joins
-  /// para incluir nombre de auxiliar, área y placa de ambulancia.
+  /// READ: trae las carpetas de un periodo, con sus áreas,
+  /// ambulancias y el nombre del auxiliar (joins anidados).
   Future<List<AssignmentModel>> fetchByPeriod({
     required int year,
     required int month,
@@ -20,8 +20,14 @@ class AssignmentRepository {
         .select('''
           *,
           profiles:auxiliar_id (full_name),
-          areas:area_id (name),
-          ambulances:ambulance_id (plate)
+          assignment_areas (
+            id, area_id,
+            areas:area_id (name, category)
+          ),
+          assignment_ambulances (
+            id, ambulance_id,
+            ambulances:ambulance_id (plate)
+          )
         ''')
         .eq('period_year', year)
         .eq('period_month', month)
@@ -32,23 +38,7 @@ class AssignmentRepository {
         .toList();
   }
 
-  /// Cuenta cuántas responsabilidades tiene un auxiliar en un periodo.
-  Future<int> countForAuxiliar({
-    required String auxiliarId,
-    required int year,
-    required int month,
-  }) async {
-    final data = await _client
-        .from('assignments')
-        .select('id')
-        .eq('auxiliar_id', auxiliarId)
-        .eq('period_year', year)
-        .eq('period_month', month);
-
-    return (data as List).length;
-  }
-
-  /// READ: trae los insumos asignados a una responsabilidad.
+  /// READ: trae los insumos de una carpeta.
   Future<List<AssignmentSupplyModel>> fetchSupplies(
       String assignmentId) async {
     final data = await _client
@@ -62,27 +52,25 @@ class AssignmentRepository {
         .toList();
   }
 
-  /// CREATE: crea una asignación y le agrega sus insumos.
-  /// Recibe el mapa de insumos {supply_id: cantidad}.
-  Future<void> create({
+  /// CREATE: crea una carpeta completa para un auxiliar:
+  /// la carpeta + sus áreas + sus ambulancias + sus insumos.
+  Future<void> createPackage({
     required String auxiliarId,
-    required String areaId,
-    String? ambulanceId,
     required int year,
     required int month,
+    required List<String> areaIds,
+    required List<String> ambulanceIds,
+    required Map<String, int> supplies,
     String? responsibilities,
     String? objectives,
     String? observations,
-    required Map<String, int> supplies,
     required String assignedBy,
   }) async {
-    // 1. Crear la asignación y obtener su id.
+    // 1. Crear la carpeta y obtener su id.
     final assignment = await _client
         .from('assignments')
         .insert({
           'auxiliar_id': auxiliarId,
-          'area_id': areaId,
-          'ambulance_id': ambulanceId,
           'period_year': year,
           'period_month': month,
           'responsibilities': responsibilities,
@@ -95,27 +83,51 @@ class AssignmentRepository {
 
     final assignmentId = assignment['id'] as String;
 
-    // 2. Insertar los insumos asociados (si hay).
+    // 2. Insertar las áreas.
+    if (areaIds.isNotEmpty) {
+      final areaRows = areaIds
+          .map((areaId) => {
+                'assignment_id': assignmentId,
+                'area_id': areaId,
+                'period_year': year,
+                'period_month': month,
+              })
+          .toList();
+      await _client.from('assignment_areas').insert(areaRows);
+    }
+
+    // 3. Insertar las ambulancias.
+    if (ambulanceIds.isNotEmpty) {
+      final ambRows = ambulanceIds
+          .map((ambId) => {
+                'assignment_id': assignmentId,
+                'ambulance_id': ambId,
+                'period_year': year,
+                'period_month': month,
+              })
+          .toList();
+      await _client.from('assignment_ambulances').insert(ambRows);
+    }
+
+    // 4. Insertar los insumos.
     if (supplies.isNotEmpty) {
-      final rows = supplies.entries
+      final supplyRows = supplies.entries
           .map((e) => {
                 'assignment_id': assignmentId,
                 'supply_id': e.key,
                 'quantity': e.value,
               })
           .toList();
-
-      await _client.from('assignment_supplies').insert(rows);
+      await _client.from('assignment_supplies').insert(supplyRows);
     }
   }
 
-  /// DELETE: elimina una asignación (sus insumos se borran en cascada).
+  /// DELETE: elimina una carpeta (todo lo suyo cae en cascada).
   Future<void> delete(String id) async {
     await _client.from('assignments').delete().eq('id', id);
   }
 
-  /// Trae los perfiles con rol 'auxiliar' que estén activos.
-  /// Para poblar el dropdown de auxiliares en el formulario.
+  /// Trae los auxiliares activos (para el formulario).
   Future<List<Map<String, dynamic>>> fetchAuxiliares() async {
     final data = await _client
         .from('profiles')
@@ -127,14 +139,30 @@ class AssignmentRepository {
     return (data as List).cast<Map<String, dynamic>>();
   }
 
-  /// Devuelve los IDs de áreas YA asignadas en un periodo.
-  /// Sirve para filtrar las disponibles en el formulario.
-  Future<Set<String>> fetchAssignedAreaIds({
+  /// IDs de auxiliares que YA tienen carpeta en el periodo.
+  /// Para no asignarles otra (regla: una carpeta por auxiliar/mes).
+  Future<Set<String>> fetchAssignedAuxiliarIds({
     required int year,
     required int month,
   }) async {
     final data = await _client
         .from('assignments')
+        .select('auxiliar_id')
+        .eq('period_year', year)
+        .eq('period_month', month);
+
+    return (data as List)
+        .map((row) => row['auxiliar_id'] as String)
+        .toSet();
+  }
+
+  /// IDs de áreas ya asignadas en el periodo (exclusividad).
+  Future<Set<String>> fetchAssignedAreaIds({
+    required int year,
+    required int month,
+  }) async {
+    final data = await _client
+        .from('assignment_areas')
         .select('area_id')
         .eq('period_year', year)
         .eq('period_month', month);
@@ -144,17 +172,16 @@ class AssignmentRepository {
         .toSet();
   }
 
-  /// Devuelve los IDs de ambulancias YA asignadas en un periodo.
+  /// IDs de ambulancias ya asignadas en el periodo (exclusividad).
   Future<Set<String>> fetchAssignedAmbulanceIds({
     required int year,
     required int month,
   }) async {
     final data = await _client
-        .from('assignments')
+        .from('assignment_ambulances')
         .select('ambulance_id')
         .eq('period_year', year)
-        .eq('period_month', month)
-        .not('ambulance_id', 'is', null);
+        .eq('period_month', month);
 
     return (data as List)
         .map((row) => row['ambulance_id'] as String)
