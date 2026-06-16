@@ -187,4 +187,45 @@ class AssignmentRepository {
         .map((row) => row['ambulance_id'] as String)
         .toSet();
   }
+/// Trae la carpeta del auxiliar actual para un periodo (o null si no tiene).
+  /// Incluye sus áreas y ambulancias vía joins.
+  Future<AssignmentModel?> fetchMyAssignment({
+    required String auxiliarId,
+    required int year,
+    required int month,
+  }) async {
+    final data = await _client
+        .from('assignments')
+        .select('''
+          *,
+          profiles:auxiliar_id (full_name),
+          assignment_areas (
+            id, area_id,
+            areas:area_id (name, category)
+          ),
+          assignment_ambulances (
+            id, ambulance_id,
+            ambulances:ambulance_id (plate)
+          )
+        ''')
+        .eq('auxiliar_id', auxiliarId)
+        .eq('period_year', year)
+        .eq('period_month', month)
+        .maybeSingle();
+
+    if (data == null) return null;
+    return AssignmentModel.fromJson(data);
+  }
+
+  /// Marca una carpeta como aceptada (registra fecha/hora).
+  Future<void> acceptAssignment(String assignmentId) async {
+    await _client
+        .from('assignments')
+        .update({
+          'accepted': true,
+          'accepted_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', assignmentId);
+  }
+
 }

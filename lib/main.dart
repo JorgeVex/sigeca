@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'features/assignments/presentation/providers/assignment_providers.dart';
 
 import 'core/config/env_config.dart';
 import 'core/router/app_router.dart';
@@ -52,6 +53,7 @@ class _SigecaAppState extends ConsumerState<SigecaApp> {
     _authSubscription =
         Supabase.instance.client.auth.onAuthStateChange.listen((_) {
       ref.invalidate(currentProfileProvider);
+      ref.invalidate(myAssignmentProvider);
     });
   }
 

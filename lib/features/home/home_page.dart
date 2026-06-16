@@ -5,6 +5,7 @@ import '../../features/catalogs/presentation/pages/ambulances_page.dart';
 import '../catalogs/presentation/pages/supplies_page.dart';
 import '../users/presentation/pages/user_page.dart';
 import '../../features/assignments/presentation/pages/assignments_page.dart';
+import '../assignments/presentation/my_assignments.dart';
 
 import '../auth/presentation/providers/auth_providers.dart';
 
@@ -184,11 +185,19 @@ class _HomeContent extends StatelessWidget {
           const _ActionCard(icon: Icons.fact_check, label: 'Aprobar reportes'),
         ];
       case 'auxiliar':
-        return const [
-          _ActionCard(icon: Icons.assignment_ind, label: 'Mis asignaciones'),
-          _ActionCard(icon: Icons.camera_alt, label: 'Registrar evidencia'),
-          _ActionCard(icon: Icons.description, label: 'Mis reportes'),
-        ];
+              return [
+                _ActionCard(
+                  icon: Icons.assignment_ind,
+                  label: 'Mis asignaciones',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MyAssignmentPage()),
+                  ),
+                ),
+              
+                const _ActionCard(icon: Icons.camera_alt, label: 'Registrar evidencia'),
+                const _ActionCard(icon: Icons.description, label: 'Mis reportes'),
+              ];
       case 'auditor':
         return const [
           _ActionCard(icon: Icons.photo_library, label: 'Evidencias'),

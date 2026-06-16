@@ -56,6 +56,7 @@ class AssignmentModel {
   final String? responsibilities;
   final String? objectives;
   final String? observations;
+  final bool accepted; // si el auxiliar ya aceptó la carpeta
   final List<AssignmentAreaItem> areas;
   final List<AssignmentAmbulanceItem> ambulances;
 
@@ -68,6 +69,7 @@ class AssignmentModel {
     this.responsibilities,
     this.objectives,
     this.observations,
+    this.accepted = false,
     this.areas = const [],
     this.ambulances = const [],
   });
@@ -88,6 +90,7 @@ class AssignmentModel {
       responsibilities: json['responsibilities'] as String?,
       objectives: json['objectives'] as String?,
       observations: json['observations'] as String?,
+      accepted: json['accepted'] as bool? ?? false,
       areas: areasJson
           .map((a) => AssignmentAreaItem.fromJson(a as Map<String, dynamic>))
           .toList(),

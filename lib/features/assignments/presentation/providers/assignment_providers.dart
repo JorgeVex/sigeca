@@ -81,3 +81,19 @@ final assignmentSuppliesProvider = FutureProvider.family
   final repository = ref.watch(assignmentRepositoryProvider);
   return repository.fetchSupplies(assignmentId);
 });
+
+/// La carpeta del auxiliar actual en el periodo seleccionado.
+final myAssignmentProvider =
+    FutureProvider<AssignmentModel?>((ref) async {
+  final period = ref.watch(selectedPeriodProvider);
+  final repository = ref.watch(assignmentRepositoryProvider);
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+
+  if (userId == null) return null;
+
+  return repository.fetchMyAssignment(
+    auxiliarId: userId,
+    year: period.year,
+    month: period.month,
+  );
+});
