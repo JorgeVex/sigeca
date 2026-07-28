@@ -6,9 +6,11 @@ import '../../data/models/report_model.dart';
 import '../../data/repositories/report_repository.dart';
 import '../providers/report_providers.dart';
 import 'area_photos_page.dart';
+import 'supply_photos_page.dart';
 
 /// Pantalla de las áreas de un reporte semanal.
 /// Muestra el progreso de fotos por área y permite cerrar la semana.
+/// Incluye una sección opcional de insumos.
 class ReportAreasPage extends ConsumerWidget {
   final ReportModel report;
   final AssignmentModel assignment;
@@ -97,6 +99,10 @@ class ReportAreasPage extends ConsumerWidget {
                         ),
                       );
                     }),
+
+                    // --- Sección de insumos (opcional) ---
+                    const SizedBox(height: 24),
+                    _buildSuppliesSection(context, ref),
                   ],
                 ),
               ),
@@ -133,6 +139,82 @@ class ReportAreasPage extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+
+  /// Sección de insumos: muestra los insumos de la carpeta con su estado.
+  /// Documentar insumos es opcional y no bloquea el cierre de la semana.
+  Widget _buildSuppliesSection(BuildContext context, WidgetRef ref) {
+    final suppliesAsync =
+        ref.watch(reportSuppliesProvider(assignment.id));
+
+    return suppliesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Text('Error al cargar insumos: $e'),
+      data: (supplies) {
+        if (supplies.isEmpty) {
+          return const SizedBox.shrink(); // sin insumos, no muestra nada
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.inventory_2, color: Colors.teal, size: 20),
+                const SizedBox(width: 8),
+                const Text('Insumos (opcional)',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Documenta cada insumo cuando lo tengas listo, en la semana '
+              'que prefieras. No es obligatorio para cerrar la semana.',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            ...supplies.map((supply) {
+              final done = supply.documented;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Icon(
+                    done ? Icons.check_circle : Icons.medical_services,
+                    color: done ? Colors.green : Colors.teal,
+                  ),
+                  title: Text(supply.supplyName),
+                  subtitle: Text(
+                    done
+                        ? 'Documentado (semana ${supply.documentedWeek ?? '-'})'
+                        : 'Cantidad: ${supply.quantity} — pendiente',
+                    style: TextStyle(
+                      color: done ? Colors.green : Colors.orange,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SupplyPhotosPage(
+                          supply: supply,
+                          weekNumber: report.weekNumber,
+                          assignmentId: assignment.id,
+                        ),
+                      ),
+                    ).then((_) {
+                      // Al volver, refrescar el estado de los insumos.
+                      ref.invalidate(reportSuppliesProvider(assignment.id));
+                    });
+                  },
+                ),
+              );
+            }),
+          ],
+        );
+      },
     );
   }
 

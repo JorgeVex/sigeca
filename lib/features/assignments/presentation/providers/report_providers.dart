@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../data/models/report_model.dart';
 import '../../data/repositories/report_repository.dart';
+import '../../data/models/assignment_supply_model.dart';
+import '../../data/models/supply_photo_model.dart';
 
 /// Provee el servicio de Storage.
 final storageServiceProvider = Provider<StorageService>((ref) {
@@ -37,4 +39,19 @@ final photosProvider = FutureProvider.family
     .autoDispose<List<ReportPhoto>, String>((ref, areaGroupId) async {
   final repository = ref.watch(reportRepositoryProvider);
   return repository.fetchPhotos(areaGroupId);
+});
+
+/// Insumos de una carpeta con su estado de documentación.
+final reportSuppliesProvider = FutureProvider.family
+    .autoDispose<List<AssignmentSupplyModel>, String>(
+        (ref, assignmentId) async {
+  final repository = ref.watch(reportRepositoryProvider);
+  return repository.fetchSuppliesForReport(assignmentId);
+});
+
+/// Fotos de un insumo específico.
+final supplyPhotosProvider = FutureProvider.family
+    .autoDispose<List<SupplyPhoto>, String>((ref, assignmentSupplyId) async {
+  final repository = ref.watch(reportRepositoryProvider);
+  return repository.fetchSupplyPhotos(assignmentSupplyId);
 });

@@ -53,4 +53,26 @@ class StorageService {
   Future<void> deletePhoto(String path) async {
     await _client.storage.from(_bucket).remove([path]);
   }
+/// Sube una foto de insumo al bucket, organizada por insumo.
+  Future<String> uploadSupplyPhoto({
+    required XFile photo,
+    required String assignmentSupplyId,
+  }) async {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final fileName = '$timestamp.jpg';
+    final path = 'supplies/$assignmentSupplyId/$fileName';
+
+    final bytes = await File(photo.path).readAsBytes();
+
+    await _client.storage.from(_bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: false,
+          ),
+        );
+
+    return path;
+  }
 }

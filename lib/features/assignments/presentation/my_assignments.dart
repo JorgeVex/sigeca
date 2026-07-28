@@ -59,7 +59,12 @@ class MyAssignmentPage extends ConsumerWidget {
               ref.watch(assignmentSuppliesProvider(assignment.id));
 
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.only( 
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 24,
+            ),
             children: [
               // --- Banner de estado ---
               Container(

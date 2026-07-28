@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/services/storage_service.dart';
 import '../models/report_model.dart';
+import '../models/assignment_supply_model.dart';
+import '../models/supply_photo_model.dart';
 
 /// Acceso a datos para reportes semanales y sus evidencias.
 class ReportRepository {
@@ -14,6 +16,10 @@ class ReportRepository {
   // Mínimo y máximo de fotos por área.
   static const int minPhotosPerArea = 8;
   static const int maxPhotosPerArea = 15;
+
+  // Límites de fotos por insumo.
+  static const int minSupplyPhotos = 1;
+  static const int maxSupplyPhotos = 5;
 
   /// Trae los reportes de una carpeta (las semanas existentes).
   Future<List<ReportModel>> fetchReports(String assignmentId) async {
@@ -158,5 +164,82 @@ class ReportRepository {
           'completed_at': DateTime.now().toIso8601String(),
         })
         .eq('id', reportId);
+  }
+
+  // ============================================
+  // INSUMOS — documentación opcional (nivel mensual)
+  // ============================================
+
+  /// Trae los insumos de una carpeta con su estado de documentación.
+  Future<List<AssignmentSupplyModel>> fetchSuppliesForReport(
+      String assignmentId) async {
+    final data = await _client
+        .from('assignment_supplies')
+        .select('*, supplies:supply_id (name)')
+        .eq('assignment_id', assignmentId)
+        .order('created_at', ascending: true);
+
+    return (data as List)
+        .map((json) =>
+            AssignmentSupplyModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Trae las fotos de un insumo documentado.
+  Future<List<SupplyPhoto>> fetchSupplyPhotos(
+      String assignmentSupplyId) async {
+    final data = await _client
+        .from('supply_photos')
+        .select()
+        .eq('assignment_supply_id', assignmentSupplyId)
+        .order('captured_at', ascending: true);
+
+    return (data as List)
+        .map((json) => SupplyPhoto.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Sube una foto de un insumo (1-5 permitidas).
+  Future<void> addSupplyPhoto({
+    required XFile photo,
+    required String assignmentSupplyId,
+    required String supplyId,
+  }) async {
+    // Subir a Storage, en una carpeta propia para insumos.
+    final path = await _storageService.uploadSupplyPhoto(
+      photo: photo,
+      assignmentSupplyId: assignmentSupplyId,
+    );
+
+    // Registrar en la base de datos.
+    await _client.from('supply_photos').insert({
+      'assignment_supply_id': assignmentSupplyId,
+      'photo_url': path,
+      'captured_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Elimina una foto de insumo.
+  Future<void> removeSupplyPhoto({
+    required String photoId,
+    required String photoPath,
+  }) async {
+    await _storageService.deletePhoto(photoPath);
+    await _client.from('supply_photos').delete().eq('id', photoId);
+  }
+
+  /// Marca un insumo como documentado en una semana dada.
+  Future<void> markSupplyDocumented({
+    required String assignmentSupplyId,
+    required int weekNumber,
+  }) async {
+    await _client
+        .from('assignment_supplies')
+        .update({
+          'documented': true,
+          'documented_week': weekNumber,
+          'documented_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', assignmentSupplyId);
   }
 }
