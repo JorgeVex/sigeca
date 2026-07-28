@@ -6,6 +6,7 @@ import '../../data/models/report_model.dart';
 import '../../data/repositories/report_repository.dart';
 import '../../data/models/assignment_supply_model.dart';
 import '../../data/models/supply_photo_model.dart';
+import '../../../../core/services/pdf_service.dart';
 
 /// Provee el servicio de Storage.
 final storageServiceProvider = Provider<StorageService>((ref) {
@@ -54,4 +55,9 @@ final supplyPhotosProvider = FutureProvider.family
     .autoDispose<List<SupplyPhoto>, String>((ref, assignmentSupplyId) async {
   final repository = ref.watch(reportRepositoryProvider);
   return repository.fetchSupplyPhotos(assignmentSupplyId);
+});
+
+/// Provee el servicio de generación de PDF.
+final pdfServiceProvider = Provider<PdfService>((ref) {
+  return PdfService();
 });

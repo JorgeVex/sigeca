@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:typed_data';
 
 /// Servicio para subir archivos a Supabase Storage.
 class StorageService {
@@ -74,5 +75,9 @@ class StorageService {
         );
 
     return path;
+  }
+  Future <Uint8List> downloadPhoto(String path) async {
+    final bytes = await _client.storage.from(_bucket).download(path);
+    return bytes;
   }
 }

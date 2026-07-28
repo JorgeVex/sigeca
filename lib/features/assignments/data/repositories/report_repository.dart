@@ -5,6 +5,8 @@ import '../../../../core/services/storage_service.dart';
 import '../models/report_model.dart';
 import '../models/assignment_supply_model.dart';
 import '../models/supply_photo_model.dart';
+import 'dart:typed_data';
+import '../../../../core/services/pdf_service.dart';
 
 /// Acceso a datos para reportes semanales y sus evidencias.
 class ReportRepository {
@@ -242,4 +244,33 @@ class ReportRepository {
         })
         .eq('id', assignmentSupplyId);
   }
+
+  /// Prepara los datos de un reporte para generar el PDF:
+  /// descarga las fotos de cada área desde Storage.
+  Future<List<PdfAreaData>> buildPdfData(String reportId) async {
+    final groups = await fetchAreaGroups(reportId);
+    final result = <PdfAreaData>[];
+
+    for (final group in groups) {
+      final photos = await fetchPhotos(group.id);
+      final photoBytes = <Uint8List>[];
+
+      for (final photo in photos) {
+        try {
+          final bytes = await _storageService.downloadPhoto(photo.photoUrl);
+          photoBytes.add(bytes);
+        } catch (_) {
+          // Si una foto falla al descargar, se omite (no rompe el PDF).
+        }
+      }
+
+      result.add(PdfAreaData(
+        areaName: group.areaName,
+        photos: photoBytes,
+      ));
+    }
+
+    return result;
+  }
+
 }
