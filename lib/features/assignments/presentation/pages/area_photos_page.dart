@@ -5,6 +5,8 @@ import '../../../../core/services/camera_service.dart';
 import '../../data/models/report_model.dart';
 import '../../data/repositories/report_repository.dart';
 import '../providers/report_providers.dart';
+import '../../../../core/services/watermark_service.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 
 /// Pantalla de captura de fotos de un área dentro de un reporte.
 class AreaPhotosPage extends ConsumerStatefulWidget {
@@ -23,6 +25,7 @@ class AreaPhotosPage extends ConsumerStatefulWidget {
 
 class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
   final CameraService _cameraService = CameraService();
+  final WatermarkService _watermarkService = WatermarkService();
   bool _uploading = false;
 
   Future<void> _takePhoto(int currentCount) async {
@@ -41,9 +44,20 @@ class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
 
     setState(() => _uploading = true);
     try {
+      // Obtener el nombre del auxiliar para el sello.
+      final profile = ref.read(currentProfileProvider).value;
+      final auxiliarName = profile?.fullName ?? 'Auxiliar';
+
+      // Estampar el sello en la foto antes de subir.
+      final sealed = await _watermarkService.applyWatermark(
+        photo: photo,
+        auxiliarName: auxiliarName,
+        label: widget.areaGroup.areaName,
+      );
+
       final repo = ref.read(reportRepositoryProvider);
       await repo.addPhoto(
-        photo: photo,
+        photo: sealed,
         reportId: widget.report.id,
         areaGroupId: widget.areaGroup.id,
         areaId: widget.areaGroup.areaId,

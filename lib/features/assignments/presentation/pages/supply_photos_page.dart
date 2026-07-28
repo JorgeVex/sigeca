@@ -6,6 +6,8 @@ import '../../data/models/supply_photo_model.dart';
 import '../../data/repositories/report_repository.dart';
 import '../providers/report_providers.dart';
 import '../../../../core/services/camera_service.dart';
+import '../../../../core/services/watermark_service.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 
 /// Pantalla para documentar un insumo: tomar 1-5 fotos y marcarlo listo.
 class SupplyPhotosPage extends ConsumerStatefulWidget {
@@ -26,6 +28,7 @@ class SupplyPhotosPage extends ConsumerStatefulWidget {
 
 class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
   final CameraService _cameraService = CameraService();
+  final WatermarkService _watermarkService = WatermarkService();
   bool _uploading = false;
 
   Future<void> _takePhoto(int currentCount) async {
@@ -43,9 +46,20 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
 
     setState(() => _uploading = true);
     try {
+      // Obtener el nombre del auxiliar para el sello.
+      final profile = ref.read(currentProfileProvider).value;
+      final auxiliarName = profile?.fullName ?? 'Auxiliar';
+
+      // Estampar el sello en la foto antes de subir.
+      final sealed = await _watermarkService.applyWatermark(
+        photo: photo,
+        auxiliarName: auxiliarName,
+        label: widget.supply.supplyName,
+      );
+
       final repo = ref.read(reportRepositoryProvider);
       await repo.addSupplyPhoto(
-        photo: photo,
+        photo: sealed,
         assignmentSupplyId: widget.supply.id,
         supplyId: widget.supply.supplyId,
       );
