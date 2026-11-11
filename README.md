@@ -142,4 +142,4 @@ El proyecto está en desarrollo activo. Funcionalidades implementadas hasta el m
 
 ## Autor
 
-[Jorge_Hernán_Velasco_Gómez]
+Jorge Hernán Velasco Gómez
