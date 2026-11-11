@@ -41,6 +41,8 @@ dependencies:
   image: ^4.9.1
   pdf: ^3.13.0
   printing: ^5.15.0
+  signature: ^6.4.0
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:

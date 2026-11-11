@@ -50,4 +50,20 @@ class AuthRepository {
     return data;
   }
 
+  /// Completa el perfil del usuario: guarda cédula y ruta de firma,
+  /// y marca el perfil como completado.
+  Future<void> completeProfile({
+    required String userId,
+    required String documentId,
+    required String signatureUrl,
+  }) async {
+    await _client
+        .from('profiles')
+        .update({
+          'document_id': documentId,
+          'signature_url': signatureUrl,
+          'profile_completed': true,
+        })
+        .eq('id', userId);
+  }
 }

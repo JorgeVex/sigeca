@@ -4,12 +4,18 @@ class ProfileModel {
   final String fullName;
   final String role;
   final bool isActive;
+  final String? documentId;        // cédula
+  final String? signatureUrl;      // ruta de la firma en Storage
+  final bool profileCompleted;     // ¿completó cédula + firma?
 
   const ProfileModel({
     required this.id,
     required this.fullName,
     required this.role,
     required this.isActive,
+    this.documentId,
+    this.signatureUrl,
+    this.profileCompleted = false,
   });
 
   /// Construye un ProfileModel a partir del JSON que devuelve Supabase.
@@ -19,6 +25,9 @@ class ProfileModel {
       fullName: json['full_name'] as String,
       role: json['role'] as String,
       isActive: json['is_active'] as bool,
+      documentId: json['document_id'] as String?,
+      signatureUrl: json['signature_url'] as String?,
+      profileCompleted: json['profile_completed'] as bool? ?? false,
     );
   }
 }

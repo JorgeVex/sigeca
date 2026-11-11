@@ -126,6 +126,46 @@ class ReportRepository {
         .eq('id', areaGroupId);
   }
 
+  /// Sube VARIAS fotos de área en paralelo y recalcula el contador
+  /// una sola vez al final (evita condición de carrera).
+  Future<void> addPhotosBatch({
+    required List<XFile> photos,
+    required String reportId,
+    required String areaGroupId,
+    required String areaId,
+  }) async {
+    final futures = photos.map((photo) async {
+      final path = await _storageService.uploadPhoto(
+        photo: photo,
+        reportId: reportId,
+        areaId: areaId,
+      );
+      await _client.from('report_photos').insert({
+        'report_area_photo_id': areaGroupId,
+        'photo_url': path,
+        'captured_at': DateTime.now().toIso8601String(),
+      });
+    }).toList();
+
+    await Future.wait(futures);
+
+    // Recalcular el contador contando las filas reales (seguro).
+    await _recountAreaPhotos(areaGroupId);
+  }
+
+  /// Cuenta las fotos reales del grupo y actualiza photo_count.
+  Future<void> _recountAreaPhotos(String areaGroupId) async {
+    final rows = await _client
+        .from('report_photos')
+        .select('id')
+        .eq('report_area_photo_id', areaGroupId);
+    final realCount = (rows as List).length;
+    await _client
+        .from('report_area_photos')
+        .update({'photo_count': realCount})
+        .eq('id', areaGroupId);
+  }
+
   /// Elimina una foto: del Storage, de la BD, y baja el contador.
   Future<void> removePhoto({
     required String photoId,
@@ -139,11 +179,8 @@ class ReportRepository {
     // 2. Borrar de la base de datos.
     await _client.from('report_photos').delete().eq('id', photoId);
 
-    // 3. Bajar el contador.
-    await _client
-        .from('report_area_photos')
-        .update({'photo_count': currentCount - 1})
-        .eq('id', areaGroupId);
+    // 3. Recalcular el contador real.
+    await _recountAreaPhotos(areaGroupId);
   }
 
   /// Cierra una semana: marca el reporte como completado.
@@ -221,6 +258,27 @@ class ReportRepository {
     });
   }
 
+  /// Sube VARIAS fotos de insumo en paralelo.
+  Future<void> addSupplyPhotosBatch({
+    required List<XFile> photos,
+    required String assignmentSupplyId,
+    required String supplyId,
+  }) async {
+    final futures = photos.map((photo) async {
+      final path = await _storageService.uploadSupplyPhoto(
+        photo: photo,
+        assignmentSupplyId: assignmentSupplyId,
+      );
+      await _client.from('supply_photos').insert({
+        'assignment_supply_id': assignmentSupplyId,
+        'photo_url': path,
+        'captured_at': DateTime.now().toIso8601String(),
+      });
+    }).toList();
+
+    await Future.wait(futures);
+  }
+
   /// Elimina una foto de insumo.
   Future<void> removeSupplyPhoto({
     required String photoId,
@@ -245,32 +303,37 @@ class ReportRepository {
         .eq('id', assignmentSupplyId);
   }
 
-  /// Prepara los datos de un reporte para generar el PDF:
-  /// descarga las fotos de cada área desde Storage.
+  /// Prepara los datos de un reporte para generar el PDF.
+  /// Descarga las fotos EN PARALELO para máxima velocidad.
   Future<List<PdfAreaData>> buildPdfData(String reportId) async {
     final groups = await fetchAreaGroups(reportId);
-    final result = <PdfAreaData>[];
 
-    for (final group in groups) {
+    // Procesar cada área en paralelo.
+    final areasFutures = groups.map((group) async {
       final photos = await fetchPhotos(group.id);
-      final photoBytes = <Uint8List>[];
 
-      for (final photo in photos) {
+      // Lanzar TODAS las descargas de este área a la vez.
+      final photoFutures = photos.map((photo) async {
         try {
-          final bytes = await _storageService.downloadPhoto(photo.photoUrl);
-          photoBytes.add(bytes);
+          return await _storageService.downloadPhoto(photo.photoUrl);
         } catch (_) {
-          // Si una foto falla al descargar, se omite (no rompe el PDF).
+          return null; // si una falla, se omite
         }
-      }
+      }).toList();
 
-      result.add(PdfAreaData(
+      // Esperar a que todas las fotos del área terminen juntas.
+      final results = await Future.wait(photoFutures);
+
+      // Filtrar las que fallaron (null).
+      final photoBytes = results.whereType<Uint8List>().toList();
+
+      return PdfAreaData(
         areaName: group.areaName,
         photos: photoBytes,
-      ));
-    }
+      );
+    }).toList();
 
-    return result;
+    // Esperar a que todas las áreas terminen.
+    return Future.wait(areasFutures);
   }
-
 }

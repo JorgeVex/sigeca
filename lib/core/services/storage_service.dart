@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:typed_data';
+import 'dart:math';
 
 /// Servicio para subir archivos a Supabase Storage.
 class StorageService {
@@ -12,6 +13,14 @@ class StorageService {
 
   static const String _bucket = 'evidences';
 
+    /// Genera un nombre único: timestamp + aleatorio, para evitar
+  /// colisiones cuando se suben varias fotos en el mismo instante.
+  String _uniqueName() {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final rand = Random().nextInt(1000000);
+    return '${ts}_$rand.jpg';
+  }
+
   /// Sube una foto al bucket y devuelve la ruta del archivo.
   /// La ruta se organiza por reporte y área para mantener orden.
   Future<String> uploadPhoto({
@@ -20,8 +29,8 @@ class StorageService {
     required String areaId,
   }) async {
     // Nombre único para el archivo, usando la marca de tiempo.
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final fileName = '$timestamp.jpg';
+    final fileName = _uniqueName();
+
 
     // Ruta organizada: reportes/<reportId>/<areaId>/<archivo>.
     final path = 'reports/$reportId/$areaId/$fileName';
@@ -59,9 +68,7 @@ class StorageService {
     required XFile photo,
     required String assignmentSupplyId,
   }) async {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final fileName = '$timestamp.jpg';
-    final path = 'supplies/$assignmentSupplyId/$fileName';
+    final path = _uniqueName();
 
     final bytes = await File(photo.path).readAsBytes();
 
@@ -80,4 +87,28 @@ class StorageService {
     final bytes = await _client.storage.from(_bucket).download(path);
     return bytes;
   }
+  /// Sube la firma de un usuario al bucket, en su propia carpeta.
+  /// Devuelve la ruta del archivo guardado.
+  Future<String> uploadSignature({
+    required XFile photo,
+    required String userId,
+  }) async {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final path = 'signatures/$userId/$timestamp.jpg';
+
+    final bytes = await File(photo.path).readAsBytes();
+
+    await _client.storage.from(_bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: true,
+          ),
+        );
+
+    return path;
+  }
+
+
 }

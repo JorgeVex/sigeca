@@ -8,6 +8,7 @@ import '../../features/assignments/presentation/pages/assignments_page.dart';
 import '../assignments/presentation/my_assignments.dart';
 
 import '../auth/presentation/providers/auth_providers.dart';
+import '../auth/presentation/pages/complete_profile_page.dart';
 
 /// Pantalla principal tras el login.
 /// Muestra contenido distinto según el rol del usuario.
@@ -19,40 +20,57 @@ class HomePage extends ConsumerWidget {
     // Observa el perfil del usuario (carga asíncrona).
     final profileAsync = ref.watch(currentProfileProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('SIGECA'),
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Cerrar sesión',
-            onPressed: () async {
-              await ref.read(authRepositoryProvider).signOut();
-            },
-          ),
-        ],
+    // El .when va por fuera del Scaffold: así el gate de "perfil
+    // incompleto" puede mostrar la pantalla de firma sin doble AppBar.
+    return profileAsync.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       ),
-      // .when maneja los tres estados del FutureProvider:
-      body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(
+      error: (err, _) => Scaffold(
+        body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Text('Error al cargar el perfil:\n$err',
                 textAlign: TextAlign.center),
           ),
         ),
-        data: (profile) {
-          if (profile == null) {
-            return const Center(
-              child: Text('No se encontró el perfil del usuario.'),
-            );
-          }
-          return _HomeContent(profile: profile);
-        },
       ),
+      data: (profile) {
+        if (profile == null) {
+          return const Scaffold(
+            body: Center(
+              child: Text('No se encontró el perfil del usuario.'),
+            ),
+          );
+        }
+
+        // Gate: auxiliares y jefes deben completar cédula + firma
+        // antes de usar la app. Admin y auditor no lo requieren.
+        final requiereFirma =
+            profile.role == 'auxiliar' || profile.role == 'jefe';
+        if (requiereFirma && !profile.profileCompleted) {
+          return const CompleteProfilePage();
+        }
+
+        // Perfil completo (o rol que no lo requiere): home normal.
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('SIGECA'),
+            backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'Cerrar sesión',
+                onPressed: () async {
+                  await ref.read(authRepositoryProvider).signOut();
+                },
+              ),
+            ],
+          ),
+          body: _HomeContent(profile: profile),
+        );
+      },
     );
   }
 }
@@ -138,40 +156,40 @@ class _HomeContent extends StatelessWidget {
   List<Widget> _actionsForRole(String role, BuildContext context) {
     switch (role) {
       case 'admin':
-              return [
-                _ActionCard(
-                  icon: Icons.people,
-                  label: 'Usuarios',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const UsersPage()),
-                  ),
-                ),
-                _ActionCard(
-                  icon: Icons.local_hospital,
-                  label: 'Áreas',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AreasPage()),
-                  ),
-                ),
-                _ActionCard(
-                  icon: Icons.directions_car,
-                  label: 'Ambulancias',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AmbulancesPage()),
-                  ),
-                ),  
-                _ActionCard(
-                  icon: Icons.inventory_2,
-                  label: 'Insumos',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SuppliesPage()),
-                  ),
-                ),
-              ];
+        return [
+          _ActionCard(
+            icon: Icons.people,
+            label: 'Usuarios',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const UsersPage()),
+            ),
+          ),
+          _ActionCard(
+            icon: Icons.local_hospital,
+            label: 'Áreas',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AreasPage()),
+            ),
+          ),
+          _ActionCard(
+            icon: Icons.directions_car,
+            label: 'Ambulancias',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AmbulancesPage()),
+            ),
+          ),
+          _ActionCard(
+            icon: Icons.inventory_2,
+            label: 'Insumos',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SuppliesPage()),
+            ),
+          ),
+        ];
       case 'jefe':
         return [
           _ActionCard(
@@ -185,19 +203,19 @@ class _HomeContent extends StatelessWidget {
           const _ActionCard(icon: Icons.fact_check, label: 'Aprobar reportes'),
         ];
       case 'auxiliar':
-              return [
-                _ActionCard(
-                  icon: Icons.assignment_ind,
-                  label: 'Mis asignaciones',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MyAssignmentPage()),
-                  ),
-                ),
-              
-                const _ActionCard(icon: Icons.camera_alt, label: 'Registrar evidencia'),
-                const _ActionCard(icon: Icons.description, label: 'Mis reportes'),
-              ];
+        return [
+          _ActionCard(
+            icon: Icons.assignment_ind,
+            label: 'Mis asignaciones',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyAssignmentPage()),
+            ),
+          ),
+          const _ActionCard(
+              icon: Icons.camera_alt, label: 'Registrar evidencia'),
+          const _ActionCard(icon: Icons.description, label: 'Mis reportes'),
+        ];
       case 'auditor':
         return const [
           _ActionCard(icon: Icons.photo_library, label: 'Evidencias'),

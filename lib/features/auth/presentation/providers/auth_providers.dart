@@ -34,6 +34,7 @@ class LoginController extends Notifier<LoginState> {
   LoginState build() => const LoginIdle();
 
   AuthRepository get _authRepository => ref.read(authRepositoryProvider);
+  
 
   Future<bool> signIn(String email, String password) async {
       state = const LoginLoading();

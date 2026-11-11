@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:printing/printing.dart';
 
 import '../../data/models/assignment_model.dart';
 import '../../data/models/report_model.dart';
@@ -8,7 +7,7 @@ import '../../data/repositories/report_repository.dart';
 import '../providers/report_providers.dart';
 import 'area_photos_page.dart';
 import 'supply_photos_page.dart';
-import '../../../auth/presentation/providers/auth_providers.dart';
+import 'report_preview_page.dart';
 
 /// Pantalla de las áreas de un reporte semanal.
 /// Muestra el progreso de fotos por área y permite cerrar la semana.
@@ -156,9 +155,16 @@ class ReportAreasPage extends ConsumerWidget {
                         foregroundColor: Colors.white,
                       ),
                       icon: const Icon(Icons.picture_as_pdf),
-                      label: const Text('Generar PDF del reporte',
+                      label: const Text('Ver y enviar reporte',
                           style: TextStyle(fontSize: 16)),
-                      onPressed: () => _generatePdf(context, ref),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ReportPreviewPage(report: report),
+                          ),
+                        );
+                      }
                     ),
                   ),
                 ),
@@ -243,46 +249,6 @@ class ReportAreasPage extends ConsumerWidget {
         );
       },
     );
-  }
-
-  /// Genera el PDF del reporte y lo muestra con el visor del sistema.
-  Future<void> _generatePdf(BuildContext context, WidgetRef ref) async {
-    // Mostrar indicador mientras se arma el PDF (descarga fotos).
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final repo = ref.read(reportRepositoryProvider);
-      final pdfService = ref.read(pdfServiceProvider);
-      final profile = ref.read(currentProfileProvider).value;
-
-      // Descargar fotos y armar los datos.
-      final areasData = await repo.buildPdfData(report.id);
-
-      // Generar el PDF.
-      final pdfBytes = await pdfService.generateWeeklyReport(
-        auxiliarName: profile?.fullName ?? 'Auxiliar',
-        jefeName: 'Jefe de Enfermería', // placeholder por ahora
-        weekNumber: report.weekNumber,
-        generatedAt: DateTime.now(),
-        areas: areasData,
-      );
-
-      if (context.mounted) Navigator.pop(context); // cierra el indicador
-
-      // Mostrar el PDF con el visor del sistema (permite guardar/compartir).
-      await Printing.layoutPdf(onLayout: (_) async => pdfBytes);
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context); // cierra el indicador
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al generar PDF: $e')),
-        );
-      }
-    }
   }
 
   void _confirmComplete(BuildContext context, WidgetRef ref) {

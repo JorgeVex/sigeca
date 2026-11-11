@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../data/models/assignment_supply_model.dart';
 import '../../data/models/supply_photo_model.dart';
@@ -10,6 +12,7 @@ import '../../../../core/services/watermark_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 
 /// Pantalla para documentar un insumo: tomar 1-5 fotos y marcarlo listo.
+/// Flujo: capturar varias (pendientes) -> subir todas en paralelo.
 class SupplyPhotosPage extends ConsumerStatefulWidget {
   final AssignmentSupplyModel supply;
   final int weekNumber;
@@ -29,41 +32,67 @@ class SupplyPhotosPage extends ConsumerStatefulWidget {
 class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
   final CameraService _cameraService = CameraService();
   final WatermarkService _watermarkService = WatermarkService();
+
+  final List<XFile> _pending = [];
   bool _uploading = false;
 
-  Future<void> _takePhoto(int currentCount) async {
-    if (currentCount >= ReportRepository.maxSupplyPhotos) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Máximo ${ReportRepository.maxSupplyPhotos} fotos por insumo.')),
-      );
-      return;
-    }
+  /// Captura fotos en ráfaga hasta cancelar o llegar al límite.
+  Future<void> _capturePhotos(int uploadedCount) async {
+    while (true) {
+      final total = uploadedCount + _pending.length;
+      if (total >= ReportRepository.maxSupplyPhotos) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Límite alcanzado (${ReportRepository.maxSupplyPhotos}). '
+                    'Borra una para tomar otra.')),
+          );
+        }
+        break;
+      }
 
-    final photo = await _cameraService.takePhoto();
-    if (photo == null) return;
+      final photo = await _cameraService.takePhoto();
+      if (photo == null) break;
+
+      setState(() => _pending.add(photo));
+    }
+  }
+
+  void _removePending(int index) {
+    setState(() => _pending.removeAt(index));
+  }
+
+  /// Aplica marca de agua y sube todas las pendientes en paralelo.
+  Future<void> _uploadAll() async {
+    if (_pending.isEmpty) return;
 
     setState(() => _uploading = true);
     try {
-      // Obtener el nombre del auxiliar para el sello.
       final profile = ref.read(currentProfileProvider).value;
       final auxiliarName = profile?.fullName ?? 'Auxiliar';
 
-      // Estampar el sello en la foto antes de subir.
-      final sealed = await _watermarkService.applyWatermark(
-        photo: photo,
-        auxiliarName: auxiliarName,
-        label: widget.supply.supplyName,
-      );
+      final sealedFutures = _pending.map((photo) {
+        return _watermarkService.applyWatermark(
+          photo: photo,
+          auxiliarName: auxiliarName,
+          label: widget.supply.supplyName,
+        );
+      }).toList();
+
+      final sealed = await Future.wait(sealedFutures);
 
       final repo = ref.read(reportRepositoryProvider);
-      await repo.addSupplyPhoto(
-        photo: sealed,
+      await repo.addSupplyPhotosBatch(
+        photos: sealed,
         assignmentSupplyId: widget.supply.id,
         supplyId: widget.supply.supplyId,
       );
-      ref.invalidate(supplyPhotosProvider(widget.supply.id));
+
+      if (mounted) {
+        setState(() => _pending.clear());
+        ref.invalidate(supplyPhotosProvider(widget.supply.id));
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -88,8 +117,8 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar',
-                style: TextStyle(color: Colors.red)),
+            child:
+                const Text('Eliminar', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -177,7 +206,10 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
       body: photosAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(child: Text('Error: $err')),
-        data: (photos) {
+        data: (uploaded) {
+          final uploadedCount = uploaded.length;
+          final total = uploadedCount + _pending.length;
+
           return Column(
             children: [
               // Info del insumo.
@@ -194,7 +226,9 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
                     Text(
                       alreadyDocumented
                           ? 'Documentado en la semana ${widget.supply.documentedWeek ?? '-'}.'
-                          : '${photos.length} de ${ReportRepository.minSupplyPhotos}-${ReportRepository.maxSupplyPhotos} fotos.',
+                          : '$uploadedCount subidas'
+                              '${_pending.isNotEmpty ? ' + ${_pending.length} pendientes' : ''}'
+                              ' (de ${ReportRepository.minSupplyPhotos}-${ReportRepository.maxSupplyPhotos})',
                       style: TextStyle(
                         color: alreadyDocumented
                             ? Colors.green
@@ -204,34 +238,79 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
                   ],
                 ),
               ),
+
               Expanded(
-                child: photos.isEmpty
-                    ? const Center(
-                        child: Text('Aún no hay fotos.',
-                            style: TextStyle(color: Colors.grey)),
-                      )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(12),
+                child: ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    // --- Fotos ya subidas ---
+                    if (uploaded.isNotEmpty) ...[
+                      const Text('Fotos subidas',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
                         ),
-                        itemCount: photos.length,
+                        itemCount: uploaded.length,
                         itemBuilder: (context, index) {
-                          final photo = photos[index];
+                          final photo = uploaded[index];
                           return _SupplyThumbnail(
                             photo: photo,
                             storageService: storageService,
-                            canDelete: !alreadyDocumented,
+                            canDelete: !alreadyDocumented && !_uploading,
                             onDelete: () => _deletePhoto(photo),
                           );
                         },
                       ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // --- Pendientes por subir ---
+                    if (_pending.isNotEmpty) ...[
+                      const Text('Pendientes por subir',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange)),
+                      const SizedBox(height: 8),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        itemCount: _pending.length,
+                        itemBuilder: (context, index) {
+                          return _PendingThumbnail(
+                            file: _pending[index],
+                            canDelete: !_uploading,
+                            onDelete: () => _removePending(index),
+                          );
+                        },
+                      ),
+                    ],
+
+                    if (uploaded.isEmpty && _pending.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 40),
+                        child: Center(
+                          child: Text('Aún no hay fotos.',
+                              style: TextStyle(color: Colors.grey)),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-              // Botón de marcar documentado (solo si no lo está).
-// Botones inferiores (solo si no está documentado).
+
+              // --- Botones inferiores (solo si no está documentado) ---
               if (!alreadyDocumented)
                 Padding(
                   padding: EdgeInsets.only(
@@ -243,7 +322,7 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Tomar foto.
+                      // Tomar fotos (ráfaga).
                       SizedBox(
                         width: double.infinity,
                         height: 50,
@@ -252,38 +331,62 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
                             backgroundColor: Colors.teal,
                             foregroundColor: Colors.white,
                           ),
-                          onPressed: _uploading
+                          onPressed: (_uploading ||
+                                  total >= ReportRepository.maxSupplyPhotos)
                               ? null
-                              : () => _takePhoto(photos.length),
-                          icon: _uploading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                      color: Colors.white, strokeWidth: 2),
-                                )
-                              : const Icon(Icons.camera_alt),
-                          label: Text(_uploading ? 'Subiendo...' : 'Tomar foto',
+                              : () => _capturePhotos(uploadedCount),
+                          icon: const Icon(Icons.camera_alt),
+                          label: Text(
+                              total >= ReportRepository.maxSupplyPhotos
+                                  ? 'Límite alcanzado'
+                                  : 'Tomar fotos',
                               style: const TextStyle(fontSize: 16)),
                         ),
                       ),
                       const SizedBox(height: 8),
+                      // Subir pendientes.
+                      if (_pending.isNotEmpty)
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _uploading ? null : _uploadAll,
+                            icon: _uploading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        color: Colors.white, strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.cloud_upload),
+                            label: Text(
+                                _uploading
+                                    ? 'Subiendo...'
+                                    : 'Subir ${_pending.length} foto(s)',
+                                style: const TextStyle(fontSize: 16)),
+                          ),
+                        ),
+                      if (_pending.isNotEmpty) const SizedBox(height: 8),
                       // Marcar como documentado.
                       SizedBox(
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: photos.isNotEmpty
-                                ? Colors.green
+                            backgroundColor: (uploadedCount > 0 && !_uploading)
+                                ? Colors.green.shade700
                                 : Colors.grey,
                             foregroundColor: Colors.white,
                           ),
                           icon: const Icon(Icons.check_circle),
                           label: const Text('Marcar como documentado',
                               style: TextStyle(fontSize: 16)),
-                          onPressed: photos.isNotEmpty
-                              ? () => _markDocumented(photos.length)
+                          onPressed: (uploadedCount > 0 && !_uploading)
+                              ? () => _markDocumented(uploadedCount)
                               : null,
                         ),
                       ),
@@ -298,7 +401,7 @@ class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
   }
 }
 
-/// Miniatura de una foto de insumo (URL firmada, bucket privado).
+/// Miniatura de una foto de insumo ya subida (URL firmada).
 class _SupplyThumbnail extends StatelessWidget {
   final SupplyPhoto photo;
   final dynamic storageService;
@@ -355,6 +458,59 @@ class _SupplyThumbnail extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Miniatura de una foto pendiente (archivo local, aún sin subir).
+class _PendingThumbnail extends StatelessWidget {
+  final XFile file;
+  final bool canDelete;
+  final VoidCallback onDelete;
+
+  const _PendingThumbnail({
+    required this.file,
+    required this.canDelete,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.file(File(file.path), fit: BoxFit.cover),
+        ),
+        Positioned(
+          bottom: 2,
+          left: 2,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            color: Colors.orange.withValues(alpha: 0.85),
+            child: const Text('pendiente',
+                style: TextStyle(color: Colors.white, fontSize: 9)),
+          ),
+        ),
+        if (canDelete)
+          Positioned(
+            top: 2,
+            right: 2,
+            child: GestureDetector(
+              onTap: onDelete,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                padding: const EdgeInsets.all(2),
+                child:
+                    const Icon(Icons.close, color: Colors.white, size: 18),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

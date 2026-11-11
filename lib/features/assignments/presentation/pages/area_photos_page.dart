@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +12,7 @@ import '../../../../core/services/watermark_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 
 /// Pantalla de captura de fotos de un área dentro de un reporte.
+/// Flujo: capturar varias fotos (pendientes) -> subir todas en paralelo.
 class AreaPhotosPage extends ConsumerStatefulWidget {
   final ReportModel report;
   final ReportAreaPhotos areaGroup;
@@ -26,44 +30,73 @@ class AreaPhotosPage extends ConsumerStatefulWidget {
 class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
   final CameraService _cameraService = CameraService();
   final WatermarkService _watermarkService = WatermarkService();
+
+  // Fotos capturadas pero aún no subidas (crudas, sin marca de agua).
+  final List<XFile> _pending = [];
   bool _uploading = false;
 
-  Future<void> _takePhoto(int currentCount) async {
-    // Verificar el máximo.
-    if (currentCount >= ReportRepository.maxPhotosPerArea) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Máximo ${ReportRepository.maxPhotosPerArea} fotos por área.')),
-      );
-      return;
-    }
+  /// Captura fotos en ráfaga: tras cada toma, reabre la cámara
+  /// hasta que el usuario cancela o se alcanza el límite.
+  Future<void> _capturePhotos(int uploadedCount) async {
+    while (true) {
+      final total = uploadedCount + _pending.length;
+      if (total >= ReportRepository.maxPhotosPerArea) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Límite alcanzado (${ReportRepository.maxPhotosPerArea}). '
+                    'Borra una para tomar otra.')),
+          );
+        }
+        break;
+      }
 
-    final photo = await _cameraService.takePhoto();
-    if (photo == null) return; // canceló
+      final photo = await _cameraService.takePhoto();
+      if (photo == null) break; // canceló -> termina la ráfaga
+
+      setState(() => _pending.add(photo));
+    }
+  }
+
+  /// Quita una foto pendiente (aún no subida).
+  void _removePending(int index) {
+    setState(() => _pending.removeAt(index));
+  }
+
+  /// Aplica marca de agua y sube todas las pendientes en paralelo.
+  Future<void> _uploadAll(int uploadedCount) async {
+    if (_pending.isEmpty) return;
 
     setState(() => _uploading = true);
     try {
-      // Obtener el nombre del auxiliar para el sello.
       final profile = ref.read(currentProfileProvider).value;
       final auxiliarName = profile?.fullName ?? 'Auxiliar';
 
-      // Estampar el sello en la foto antes de subir.
-      final sealed = await _watermarkService.applyWatermark(
-        photo: photo,
-        auxiliarName: auxiliarName,
-        label: widget.areaGroup.areaName,
-      );
+      // Aplicar marca de agua a cada pendiente (en paralelo).
+      final sealedFutures = _pending.map((photo) {
+        return _watermarkService.applyWatermark(
+          photo: photo,
+          auxiliarName: auxiliarName,
+          label: widget.areaGroup.areaName,
+        );
+      }).toList();
 
+      final sealed = await Future.wait(sealedFutures);
+
+      // Subir todas en paralelo + recontar al final.
       final repo = ref.read(reportRepositoryProvider);
-      await repo.addPhoto(
-        photo: sealed,
+      await repo.addPhotosBatch(
+        photos: sealed,
         reportId: widget.report.id,
         areaGroupId: widget.areaGroup.id,
         areaId: widget.areaGroup.areaId,
-        currentCount: currentCount,
       );
-      ref.invalidate(photosProvider(widget.areaGroup.id));
+
+      if (mounted) {
+        setState(() => _pending.clear());
+        ref.invalidate(photosProvider(widget.areaGroup.id));
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -75,12 +108,12 @@ class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
     }
   }
 
-  Future<void> _deletePhoto(ReportPhoto photo, int currentCount) async {
+  Future<void> _deleteUploaded(ReportPhoto photo, int currentCount) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Eliminar foto'),
-        content: const Text('¿Eliminar esta foto?'),
+        content: const Text('¿Eliminar esta foto ya subida?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -88,8 +121,8 @@ class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar',
-                style: TextStyle(color: Colors.red)),
+            child:
+                const Text('Eliminar', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -127,73 +160,171 @@ class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
-      floatingActionButton: canEdit
-          ? photosAsync.maybeWhen(
-              data: (photos) => FloatingActionButton.extended(
-                backgroundColor: Colors.teal,
-                foregroundColor: Colors.white,
-                onPressed:
-                    _uploading ? null : () => _takePhoto(photos.length),
-                icon: _uploading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2),
-                      )
-                    : const Icon(Icons.camera_alt),
-                label: Text(_uploading ? 'Subiendo...' : 'Tomar foto'),
-              ),
-              orElse: () => null,
-            )
-          : null,
       body: photosAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(child: Text('Error: $err')),
-        data: (photos) {
+        data: (uploaded) {
+          final uploadedCount = uploaded.length;
+          final total = uploadedCount + _pending.length;
+
           return Column(
             children: [
               // Contador de progreso.
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
-                color: photos.length >= ReportRepository.minPhotosPerArea
+                color: uploadedCount >= ReportRepository.minPhotosPerArea
                     ? Colors.green.withValues(alpha: 0.1)
                     : Colors.orange.withValues(alpha: 0.1),
                 child: Text(
-                  '${photos.length} de ${ReportRepository.minPhotosPerArea}-${ReportRepository.maxPhotosPerArea} fotos'
-                  '${photos.length >= ReportRepository.minPhotosPerArea ? ' — mínimo alcanzado ✓' : ''}',
+                  '$uploadedCount subidas'
+                  '${_pending.isNotEmpty ? ' + ${_pending.length} pendientes' : ''}'
+                  ' (de ${ReportRepository.minPhotosPerArea}-${ReportRepository.maxPhotosPerArea})'
+                  '${uploadedCount >= ReportRepository.minPhotosPerArea ? ' — mínimo ✓' : ''}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
+
               Expanded(
-                child: photos.isEmpty
-                    ? const Center(
-                        child: Text('Aún no hay fotos. Usa el botón para tomar.',
-                            style: TextStyle(color: Colors.grey)),
-                      )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(12),
+                child: ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    // --- Fotos ya subidas ---
+                    if (uploaded.isNotEmpty) ...[
+                      const Text('Fotos subidas',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
                         ),
-                        itemCount: photos.length,
+                        itemCount: uploaded.length,
                         itemBuilder: (context, index) {
-                          final photo = photos[index];
+                          final photo = uploaded[index];
                           return _PhotoThumbnail(
                             photo: photo,
                             storageService: storageService,
-                            canDelete: canEdit,
+                            canDelete: canEdit && !_uploading,
                             onDelete: () =>
-                                _deletePhoto(photo, photos.length),
+                                _deleteUploaded(photo, uploadedCount),
                           );
                         },
                       ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // --- Fotos pendientes (crudas, por subir) ---
+                    if (_pending.isNotEmpty) ...[
+                      const Text('Pendientes por subir',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange)),
+                      const SizedBox(height: 8),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        itemCount: _pending.length,
+                        itemBuilder: (context, index) {
+                          return _PendingThumbnail(
+                            file: _pending[index],
+                            canDelete: !_uploading,
+                            onDelete: () => _removePending(index),
+                          );
+                        },
+                      ),
+                    ],
+
+                    if (uploaded.isEmpty && _pending.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 40),
+                        child: Center(
+                          child: Text(
+                              'Aún no hay fotos. Usa "Tomar fotos" para empezar.',
+                              style: TextStyle(color: Colors.grey)),
+                        ),
+                      ),
+                  ],
+                ),
               ),
+
+              // --- Botones inferiores ---
+              if (canEdit)
+                Padding(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 8,
+                    bottom: MediaQuery.of(context).viewPadding.bottom + 16,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Tomar fotos (ráfaga).
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: (_uploading ||
+                                  total >= ReportRepository.maxPhotosPerArea)
+                              ? null
+                              : () => _capturePhotos(uploadedCount),
+                          icon: const Icon(Icons.camera_alt),
+                          label: Text(
+                              total >= ReportRepository.maxPhotosPerArea
+                                  ? 'Límite alcanzado'
+                                  : 'Tomar fotos',
+                              style: const TextStyle(fontSize: 16)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Subir todas las pendientes.
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _pending.isNotEmpty
+                                ? Colors.green
+                                : Colors.grey,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: (_pending.isEmpty || _uploading)
+                              ? null
+                              : () => _uploadAll(uploadedCount),
+                          icon: _uploading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Icon(Icons.cloud_upload),
+                          label: Text(
+                              _uploading
+                                  ? 'Subiendo...'
+                                  : 'Subir ${_pending.length} foto(s)',
+                              style: const TextStyle(fontSize: 16)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           );
         },
@@ -202,7 +333,7 @@ class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
   }
 }
 
-/// Miniatura de una foto, cargada con URL firmada (bucket privado).
+/// Miniatura de una foto ya subida (URL firmada, bucket privado).
 class _PhotoThumbnail extends StatelessWidget {
   final ReportPhoto photo;
   final dynamic storageService; // StorageService
@@ -259,6 +390,60 @@ class _PhotoThumbnail extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Miniatura de una foto pendiente (archivo local, aún sin subir).
+class _PendingThumbnail extends StatelessWidget {
+  final XFile file;
+  final bool canDelete;
+  final VoidCallback onDelete;
+
+  const _PendingThumbnail({
+    required this.file,
+    required this.canDelete,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.file(File(file.path), fit: BoxFit.cover),
+        ),
+        // Marca de "pendiente".
+        Positioned(
+          bottom: 2,
+          left: 2,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            color: Colors.orange.withValues(alpha: 0.85),
+            child: const Text('pendiente',
+                style: TextStyle(color: Colors.white, fontSize: 9)),
+          ),
+        ),
+        if (canDelete)
+          Positioned(
+            top: 2,
+            right: 2,
+            child: GestureDetector(
+              onTap: onDelete,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                padding: const EdgeInsets.all(2),
+                child:
+                    const Icon(Icons.close, color: Colors.white, size: 18),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
