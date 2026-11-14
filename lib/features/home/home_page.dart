@@ -10,6 +10,9 @@ import '../assignments/presentation/my_assignments.dart';
 import '../auth/presentation/providers/auth_providers.dart';
 import '../auth/presentation/pages/complete_profile_page.dart';
 
+import '../assignments/presentation/pages/my_reports_page.dart';
+import '../assignments/presentation/pages/register_evidence_page.dart';
+
 /// Pantalla principal tras el login.
 /// Muestra contenido distinto según el rol del usuario.
 class HomePage extends ConsumerWidget {
@@ -212,9 +215,23 @@ class _HomeContent extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const MyAssignmentPage()),
             ),
           ),
-          const _ActionCard(
-              icon: Icons.camera_alt, label: 'Registrar evidencia'),
-          const _ActionCard(icon: Icons.description, label: 'Mis reportes'),
+          // Atajo directo al flujo de registrar evidencia (= Mis asignaciones).
+          _ActionCard(
+            icon: Icons.camera_alt,
+            label: 'Registrar evidencia',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RegisterEvidencePage()),
+            ),
+          ),
+          _ActionCard(
+            icon: Icons.description,
+            label: 'Mis reportes',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyReportsPage()),
+            ),
+          ),
         ];
       case 'auditor':
         return const [

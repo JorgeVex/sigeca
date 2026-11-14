@@ -97,3 +97,12 @@ final myAssignmentProvider =
     month: period.month,
   );
 });
+
+/// TODAS las carpetas (meses) del auxiliar actual, para "Mis reportes".
+final myAssignmentsHistoryProvider =
+    FutureProvider<List<AssignmentModel>>((ref) async {
+  final repository = ref.watch(assignmentRepositoryProvider);
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+  if (userId == null) return [];
+  return repository.fetchAllMyAssignments(userId);
+});

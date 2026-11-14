@@ -115,7 +115,7 @@ class PdfService {
             decoration: pw.BoxDecoration(
               border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
             ),
-            child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.cover),
+            child: pw.Image(pw.MemoryImage(bytes), fit: pw.BoxFit.contain),
           ),
         );
       }).toList(),

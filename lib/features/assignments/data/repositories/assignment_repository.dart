@@ -188,6 +188,33 @@ class AssignmentRepository {
         .toSet();
   }
 /// Trae la carpeta del auxiliar actual para un periodo (o null si no tiene).
+  /// Trae TODAS las carpetas de un auxiliar (todos los meses),
+  /// ordenadas de la más reciente a la más antigua.
+  Future<List<AssignmentModel>> fetchAllMyAssignments(
+      String auxiliarId) async {
+    final data = await _client
+        .from('assignments')
+        .select('''
+          *,
+          profiles:auxiliar_id (full_name),
+          assignment_areas (
+            id, area_id,
+            areas:area_id (name, category)
+          ),
+          assignment_ambulances (
+            id, ambulance_id,
+            ambulances:ambulance_id (plate)
+          )
+        ''')
+        .eq('auxiliar_id', auxiliarId)
+        .order('period_year', ascending: false)
+        .order('period_month', ascending: false);
+
+    return (data as List)
+        .map((json) => AssignmentModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Incluye sus áreas y ambulancias vía joins.
   Future<AssignmentModel?> fetchMyAssignment({
     required String auxiliarId,
