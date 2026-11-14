@@ -8,6 +8,7 @@ import '../../data/models/report_model.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../providers/report_providers.dart';
 
+import 'package:flutter/services.dart' show rootBundle;
 /// Pantalla de previsualización del PDF del reporte.
 /// Muestra el documento renderizado y permite compartirlo.
 class ReportPreviewPage extends ConsumerWidget {
@@ -39,20 +40,43 @@ class ReportPreviewPage extends ConsumerWidget {
     );
   }
 
-  /// Arma el PDF: descarga las fotos y genera el documento.
+  /// Arma el PDF: descarga las fotos, la firma, y genera el documento.
   Future<Uint8List> _buildPdf(WidgetRef ref) async {
     final repo = ref.read(reportRepositoryProvider);
+    final storage = ref.read(storageServiceProvider);
     final pdfService = ref.read(pdfServiceProvider);
     final profile = ref.read(currentProfileProvider).value;
 
     final areasData = await repo.buildPdfData(report.id);
 
+    // Descargar la firma del auxiliar desde Storage (si existe).
+    Uint8List? signatureBytes;
+    final signaturePath = profile?.signatureUrl;
+    if (signaturePath != null && signaturePath.isNotEmpty) {
+      try {
+        signatureBytes = await storage.downloadPhoto(signaturePath);
+      } catch (_) {
+        signatureBytes = null; // si falla, el PDF sale sin imagen de firma
+      }
+    }
+
+    Uint8List logoBytes;
+    try {
+      final data = await rootBundle.load('assets/images/logoese.png');
+      logoBytes = data.buffer.asUint8List();
+    } catch (_) {
+      logoBytes = Uint8List(0); // si falla, el PDF sale sin logo
+    }
+
     return pdfService.generateWeeklyReport(
       auxiliarName: profile?.fullName ?? 'Auxiliar',
+      auxiliarDocument: profile?.documentId ?? '',
       jefeName: 'Jefe de Enfermería',
       weekNumber: report.weekNumber,
       generatedAt: DateTime.now(),
       areas: areasData,
+      auxiliarSignature: signatureBytes,
+      logo: logoBytes,
     );
   }
 }
