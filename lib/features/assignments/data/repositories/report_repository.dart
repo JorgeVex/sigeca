@@ -42,6 +42,7 @@ class ReportRepository {
     required String assignmentId,
     required int weekNumber,
     required List<String> areaIds,
+    List<String> ambulanceIds = const [], // NUEVO
   }) async {
     // 1. Crear el reporte.
     final reportData = await _client
@@ -65,6 +66,18 @@ class ReportRepository {
               })
           .toList();
       await _client.from('report_area_photos').insert(groups);
+    }
+
+    // 3. Crear un grupo de fotos vacío por cada ambulancia de la carpeta.
+    if (ambulanceIds.isNotEmpty) {
+      final ambGroups = ambulanceIds
+          .map((ambId) => {
+                'report_id': report.id,
+                'ambulance_id': ambId,
+                'photo_count': 0,
+              })
+          .toList();
+      await _client.from('report_ambulance_photos').insert(ambGroups);
     }
 
     return report;
@@ -185,15 +198,26 @@ class ReportRepository {
 
   /// Cierra una semana: marca el reporte como completado.
   /// Valida que todas las áreas tengan el mínimo de fotos.
+  /// Cierra una semana: valida que áreas Y ambulancias tengan el mínimo.
   Future<void> completeWeek(String reportId) async {
-    // Verificar que todos los grupos de área tengan el mínimo.
+    // Áreas con el mínimo.
     final groups = await fetchAreaGroups(reportId);
-    final incomplete =
+    final incompleteAreas =
         groups.where((g) => g.photoCount < minPhotosPerArea).toList();
-
-    if (incomplete.isNotEmpty) {
+    if (incompleteAreas.isNotEmpty) {
       throw Exception(
           'Faltan fotos: cada área necesita al menos $minPhotosPerArea fotos.');
+    }
+
+    // Ambulancias con el mínimo.
+    final ambGroups = await fetchAmbulanceGroups(reportId);
+    final incompleteAmb = ambGroups
+        .where((g) => g.photoCount < minPhotosPerAmbulance)
+        .toList();
+    if (incompleteAmb.isNotEmpty) {
+      throw Exception(
+          'Faltan fotos: cada ambulancia necesita al menos '
+          '$minPhotosPerAmbulance fotos.');
     }
 
     await _client
@@ -336,4 +360,86 @@ class ReportRepository {
     // Esperar a que todas las áreas terminen.
     return Future.wait(areasFutures);
   }
+
+    // ============================================
+  // AMBULANCIAS — fotos de aseo (obligatorias, semanal)
+  // ============================================
+
+  static const int minPhotosPerAmbulance = 4;
+  static const int maxPhotosPerAmbulance = 10;
+
+  /// Trae los grupos de ambulancia de un reporte (con placa vía join).
+  Future<List<ReportAmbulancePhotos>> fetchAmbulanceGroups(
+      String reportId) async {
+    final data = await _client
+        .from('report_ambulance_photos')
+        .select('*, ambulances:ambulance_id (plate)')
+        .eq('report_id', reportId);
+
+    return (data as List)
+        .map((json) =>
+            ReportAmbulancePhotos.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Trae las fotos de un grupo de ambulancia.
+  Future<List<ReportPhoto>> fetchAmbulancePhotos(String ambGroupId) async {
+    final data = await _client
+        .from('report_photos')
+        .select()
+        .eq('report_ambulance_photo_id', ambGroupId)
+        .order('captured_at', ascending: true);
+
+    return (data as List)
+        .map((json) => ReportPhoto.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Sube varias fotos de ambulancia en paralelo + recuenta al final.
+  Future<void> addAmbulancePhotosBatch({
+    required List<XFile> photos,
+    required String reportId,
+    required String ambGroupId,
+    required String ambulanceId,
+  }) async {
+    final futures = photos.map((photo) async {
+      // Reutiliza el storage pero en carpeta de ambulancias.
+      final path = await _storageService.uploadAmbulancePhoto(
+        photo: photo,
+        reportId: reportId,
+        ambulanceId: ambulanceId,
+      );
+      await _client.from('report_photos').insert({
+        'report_ambulance_photo_id': ambGroupId,
+        'photo_url': path,
+        'captured_at': DateTime.now().toIso8601String(),
+      });
+    }).toList();
+
+    await Future.wait(futures);
+    await _recountAmbulancePhotos(ambGroupId);
+  }
+
+  Future<void> _recountAmbulancePhotos(String ambGroupId) async {
+    final rows = await _client
+        .from('report_photos')
+        .select('id')
+        .eq('report_ambulance_photo_id', ambGroupId);
+    final realCount = (rows as List).length;
+    await _client
+        .from('report_ambulance_photos')
+        .update({'photo_count': realCount})
+        .eq('id', ambGroupId);
+  }
+
+  Future<void> removeAmbulancePhoto({
+    required String photoId,
+    required String photoPath,
+    required String ambGroupId,
+  }) async {
+    await _storageService.deletePhoto(photoPath);
+    await _client.from('report_photos').delete().eq('id', photoId);
+    await _recountAmbulancePhotos(ambGroupId);
+  }
+
 }

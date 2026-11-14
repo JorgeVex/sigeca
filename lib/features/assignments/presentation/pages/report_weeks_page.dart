@@ -139,6 +139,8 @@ class ReportWeeksPage extends ConsumerWidget {
           assignmentId: assignment.id,
           weekNumber: weekNumber,
           areaIds: assignment.areas.map((a) => a.areaId).toList(),
+          ambulanceIds:
+              assignment.ambulances.map((a) => a.ambulanceId).toList(),
         );
         ref.invalidate(reportsListProvider(assignment.id));
       } catch (e) {

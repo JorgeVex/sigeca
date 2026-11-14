@@ -110,5 +110,25 @@ class StorageService {
     return path;
   }
 
+    /// Sube una foto de aseo de ambulancia, organizada por reporte y ambulancia.
+  Future<String> uploadAmbulancePhoto({
+    required XFile photo,
+    required String reportId,
+    required String ambulanceId,
+  }) async {
+    final path =
+        'reports/$reportId/ambulances/$ambulanceId/${_uniqueName()}';
+    final bytes = await File(photo.path).readAsBytes();
+    await _client.storage.from(_bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: false,
+          ),
+        );
+    return path;
+  }
+
 
 }

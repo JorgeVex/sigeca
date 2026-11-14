@@ -61,3 +61,17 @@ final supplyPhotosProvider = FutureProvider.family
 final pdfServiceProvider = Provider<PdfService>((ref) {
   return PdfService();
 });
+
+/// Grupos de ambulancia de un reporte específico.
+final ambulanceGroupsProvider = FutureProvider.family
+    .autoDispose<List<ReportAmbulancePhotos>, String>((ref, reportId) async {
+  final repository = ref.watch(reportRepositoryProvider);
+  return repository.fetchAmbulanceGroups(reportId);
+});
+
+/// Fotos de un grupo de ambulancia específico.
+final ambulancePhotosProvider = FutureProvider.family
+    .autoDispose<List<ReportPhoto>, String>((ref, ambGroupId) async {
+  final repository = ref.watch(reportRepositoryProvider);
+  return repository.fetchAmbulancePhotos(ambGroupId);
+});

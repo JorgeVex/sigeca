@@ -80,3 +80,28 @@ class ReportModel {
     );
   }
 }
+
+/// El grupo de fotos de una ambulancia dentro de un reporte.
+class ReportAmbulancePhotos {
+  final String id;
+  final String ambulanceId;
+  final String plate;    // viene del join
+  final int photoCount;
+
+  const ReportAmbulancePhotos({
+    required this.id,
+    required this.ambulanceId,
+    required this.plate,
+    required this.photoCount,
+  });
+
+  factory ReportAmbulancePhotos.fromJson(Map<String, dynamic> json) {
+    final amb = json['ambulances'] as Map<String, dynamic>?;
+    return ReportAmbulancePhotos(
+      id: json['id'] as String,
+      ambulanceId: json['ambulance_id'] as String,
+      plate: amb?['plate'] as String? ?? 'Sin placa',
+      photoCount: json['photo_count'] as int? ?? 0,
+    );
+  }
+}

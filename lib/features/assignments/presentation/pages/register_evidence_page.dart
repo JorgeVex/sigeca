@@ -136,6 +136,8 @@ class _AutoOpenWeekState extends ConsumerState<_AutoOpenWeek> {
           weekNumber: widget.weekNumber,
           areaIds:
               widget.assignment.areas.map((a) => a.areaId).toList().cast<String>(),
+          ambulanceIds: widget.assignment.ambulances
+          .map((a) => a.ambulanceId).toList().cast<String>(), 
         );
         ref.invalidate(reportsListProvider(widget.assignment.id));
       } catch (e) {

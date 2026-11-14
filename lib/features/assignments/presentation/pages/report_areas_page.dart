@@ -9,6 +9,8 @@ import 'area_photos_page.dart';
 import 'supply_photos_page.dart';
 import 'report_preview_page.dart';
 
+import 'ambulance_photos_page.dart';
+
 /// Pantalla de las áreas de un reporte semanal.
 /// Muestra el progreso de fotos por área y permite cerrar la semana.
 /// Incluye una sección opcional de insumos y la generación del PDF.
@@ -25,6 +27,7 @@ class ReportAreasPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groupsAsync = ref.watch(areaGroupsProvider(report.id));
+    final ambGroupsAsync = ref.watch(ambulanceGroupsProvider(report.id));
 
     return Scaffold(
       appBar: AppBar(
@@ -43,7 +46,7 @@ class ReportAreasPage extends ConsumerWidget {
         ),
         data: (groups) {
           // ¿Todas las áreas tienen el mínimo?
-          final allComplete = groups.every(
+          final areasComplete = groups.every(
               (g) => g.photoCount >= ReportRepository.minPhotosPerArea);
 
           return Column(
@@ -102,6 +105,8 @@ class ReportAreasPage extends ConsumerWidget {
                     }),
 
                     // --- Sección de insumos (opcional) ---
+                    _buildAmbulancesSection(context, ref, ambGroupsAsync),
+
                     const SizedBox(height: 24),
                     _buildSuppliesSection(context, ref),
                   ],
@@ -117,23 +122,35 @@ class ReportAreasPage extends ConsumerWidget {
                     top: 8,
                     bottom: MediaQuery.of(context).viewPadding.bottom + 16,
                   ),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            allComplete ? Colors.teal : Colors.grey,
-                        foregroundColor: Colors.white,
-                      ),
-                      icon: const Icon(Icons.lock),
-                      label: Text(allComplete
-                          ? 'Cerrar semana ${report.weekNumber}'
-                          : 'Completa todas las áreas para cerrar'),
-                      onPressed: allComplete
-                          ? () => _confirmComplete(context, ref)
-                          : null,
-                    ),
+                  child: Builder(
+                    builder: (context) {
+                      // Las ambulancias cuentan solo si ya cargaron.
+                      final ambComplete = ambGroupsAsync.maybeWhen(
+                        data: (ambs) => ambs.every((g) =>
+                            g.photoCount >=
+                            ReportRepository.minPhotosPerAmbulance),
+                        orElse: () => false,
+                      );
+                      final allComplete = areasComplete && ambComplete;
+                      return SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                allComplete ? Colors.teal : Colors.grey,
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.lock),
+                          label: Text(allComplete
+                              ? 'Cerrar semana ${report.weekNumber}'
+                              : 'Completa áreas y ambulancias para cerrar'),
+                          onPressed: allComplete
+                              ? () => _confirmComplete(context, ref)
+                              : null,
+                        ),
+                      );
+                    },
                   ),
                 ),
 
@@ -240,6 +257,86 @@ class ReportAreasPage extends ConsumerWidget {
                     ).then((_) {
                       // Al volver, refrescar el estado de los insumos.
                       ref.invalidate(reportSuppliesProvider(assignment.id));
+                    });
+                  },
+                ),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+    /// Sección de ambulancias: fotos de aseo obligatorias (como las áreas).
+  Widget _buildAmbulancesSection(
+    BuildContext context,
+    WidgetRef ref,
+    AsyncValue<List<ReportAmbulancePhotos>> ambGroupsAsync,
+  ) {
+    return ambGroupsAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(8),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Text('Error al cargar ambulancias: $e'),
+      data: (ambGroups) {
+        if (ambGroups.isEmpty) {
+          return const SizedBox.shrink(); // sin ambulancias, no muestra nada
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                const Icon(Icons.local_shipping, color: Colors.teal, size: 20),
+                const SizedBox(width: 8),
+                const Text('Ambulancias',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Toma entre ${ReportRepository.minPhotosPerAmbulance} y '
+              '${ReportRepository.maxPhotosPerAmbulance} fotos del aseo de '
+              'cada ambulancia. Es obligatorio para cerrar la semana.',
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            ...ambGroups.map((amb) {
+              final hasMin =
+                  amb.photoCount >= ReportRepository.minPhotosPerAmbulance;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Icon(
+                    Icons.local_shipping,
+                    color: hasMin ? Colors.green : Colors.teal,
+                  ),
+                  title: Text('Ambulancia ${amb.plate}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(
+                    '${amb.photoCount} foto(s)'
+                    '${hasMin ? ' ✓' : ' — faltan ${ReportRepository.minPhotosPerAmbulance - amb.photoCount}'}',
+                    style: TextStyle(
+                      color: hasMin ? Colors.green : Colors.orange,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AmbulancePhotosPage(
+                          report: report,
+                          ambGroup: amb,
+                        ),
+                      ),
+                    ).then((_) {
+                      ref.invalidate(ambulanceGroupsProvider(report.id));
                     });
                   },
                 ),
