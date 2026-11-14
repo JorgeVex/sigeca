@@ -7,9 +7,11 @@ import '../../data/models/assignment_supply_model.dart';
 import '../../data/models/supply_photo_model.dart';
 import '../../data/repositories/report_repository.dart';
 import '../providers/report_providers.dart';
-import '../../../../core/services/camera_service.dart';
 import '../../../../core/services/watermark_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+
+import '../../../../core/widgets/photo_viewer.dart';
+import '../../../../core/widgets/sigeca_camera_page.dart';
 
 /// Pantalla para documentar un insumo: tomar 1-5 fotos y marcarlo listo.
 /// Flujo: capturar varias (pendientes) -> subir todas en paralelo.
@@ -30,32 +32,36 @@ class SupplyPhotosPage extends ConsumerStatefulWidget {
 }
 
 class _SupplyPhotosPageState extends ConsumerState<SupplyPhotosPage> {
-  final CameraService _cameraService = CameraService();
   final WatermarkService _watermarkService = WatermarkService();
 
   final List<XFile> _pending = [];
   bool _uploading = false;
 
-  /// Captura fotos en ráfaga hasta cancelar o llegar al límite.
+  /// Abre la cámara embebida (modo ráfaga) y agrega las fotos
+  /// tomadas a la lista de pendientes.
   Future<void> _capturePhotos(int uploadedCount) async {
-    while (true) {
-      final total = uploadedCount + _pending.length;
-      if (total >= ReportRepository.maxSupplyPhotos) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    'Límite alcanzado (${ReportRepository.maxSupplyPhotos}). '
-                    'Borra una para tomar otra.')),
-          );
-        }
-        break;
-      }
+    final total = uploadedCount + _pending.length;
+    final remaining = ReportRepository.maxSupplyPhotos - total;
 
-      final photo = await _cameraService.takePhoto();
-      if (photo == null) break;
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Límite alcanzado (${ReportRepository.maxSupplyPhotos}). '
+                'Borra una para tomar otra.')),
+      );
+      return;
+    }
 
-      setState(() => _pending.add(photo));
+    final result = await Navigator.push<List<XFile>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SigecaCameraPage(remaining: remaining),
+      ),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      setState(() => _pending.addAll(result));
     }
   }
 
@@ -434,9 +440,12 @@ class _SupplyThumbnail extends StatelessWidget {
         return Stack(
           fit: StackFit.expand,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(snapshot.data!, fit: BoxFit.cover),
+            GestureDetector(
+              onTap: () => PhotoViewer.showNetwork(context, snapshot.data!),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(snapshot.data!, fit: BoxFit.cover),
+              ),
             ),
             if (canDelete)
               Positioned(
@@ -479,9 +488,12 @@ class _PendingThumbnail extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.file(File(file.path), fit: BoxFit.cover),
+        GestureDetector(
+          onTap: () => PhotoViewer.showFile(context, file.path),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(File(file.path), fit: BoxFit.cover),
+          ),
         ),
         Positioned(
           bottom: 2,

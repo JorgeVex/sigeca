@@ -4,12 +4,15 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/services/camera_service.dart';
 import '../../data/models/report_model.dart';
 import '../../data/repositories/report_repository.dart';
 import '../providers/report_providers.dart';
 import '../../../../core/services/watermark_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+
+import '../../../../core/widgets/photo_viewer.dart';
+import '../../../../core/widgets/sigeca_camera_page.dart';
+
 
 /// Pantalla de captura de fotos de un área dentro de un reporte.
 /// Flujo: capturar varias fotos (pendientes) -> subir todas en paralelo.
@@ -28,34 +31,37 @@ class AreaPhotosPage extends ConsumerStatefulWidget {
 }
 
 class _AreaPhotosPageState extends ConsumerState<AreaPhotosPage> {
-  final CameraService _cameraService = CameraService();
   final WatermarkService _watermarkService = WatermarkService();
 
   // Fotos capturadas pero aún no subidas (crudas, sin marca de agua).
   final List<XFile> _pending = [];
   bool _uploading = false;
 
-  /// Captura fotos en ráfaga: tras cada toma, reabre la cámara
-  /// hasta que el usuario cancela o se alcanza el límite.
+  /// Abre la cámara embebida (modo ráfaga) y agrega las fotos
+  /// tomadas a la lista de pendientes.
   Future<void> _capturePhotos(int uploadedCount) async {
-    while (true) {
-      final total = uploadedCount + _pending.length;
-      if (total >= ReportRepository.maxPhotosPerArea) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    'Límite alcanzado (${ReportRepository.maxPhotosPerArea}). '
-                    'Borra una para tomar otra.')),
-          );
-        }
-        break;
-      }
+    final total = uploadedCount + _pending.length;
+    final remaining = ReportRepository.maxPhotosPerArea - total;
 
-      final photo = await _cameraService.takePhoto();
-      if (photo == null) break; // canceló -> termina la ráfaga
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Límite alcanzado (${ReportRepository.maxPhotosPerArea}). '
+                'Borra una para tomar otra.')),
+      );
+      return;
+    }
 
-      setState(() => _pending.add(photo));
+    final result = await Navigator.push<List<XFile>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SigecaCameraPage(remaining: remaining),
+      ),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      setState(() => _pending.addAll(result));
     }
   }
 
@@ -366,9 +372,12 @@ class _PhotoThumbnail extends StatelessWidget {
         return Stack(
           fit: StackFit.expand,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(snapshot.data!, fit: BoxFit.cover),
+            GestureDetector(
+              onTap: () => PhotoViewer.showNetwork(context, snapshot.data!),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(snapshot.data!, fit: BoxFit.cover),
+              ),
             ),
             if (canDelete)
               Positioned(
@@ -411,9 +420,12 @@ class _PendingThumbnail extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.file(File(file.path), fit: BoxFit.cover),
+        GestureDetector(
+          onTap: () => PhotoViewer.showFile(context, file.path),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(File(file.path), fit: BoxFit.cover),
+          ),
         ),
         // Marca de "pendiente".
         Positioned(
