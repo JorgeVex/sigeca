@@ -13,6 +13,8 @@ import '../auth/presentation/pages/complete_profile_page.dart';
 import '../assignments/presentation/pages/my_reports_page.dart';
 import '../assignments/presentation/pages/register_evidence_page.dart';
 
+import '../ambulance_reviews/presentation/pages/ambulance_reviews_list_page.dart';
+
 /// Pantalla principal tras el login.
 /// Muestra contenido distinto según el rol del usuario.
 class HomePage extends ConsumerWidget {
@@ -232,6 +234,14 @@ class _HomeContent extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const MyReportsPage()),
             ),
           ),
+          _ActionCard(
+            icon: Icons.local_shipping,
+            label: 'Revisión de ambulancias',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AmbulanceReviewsListPage()),
+            ),
+          )
         ];
       case 'auditor':
         return const [
