@@ -14,6 +14,7 @@ import '../assignments/presentation/pages/my_reports_page.dart';
 import '../assignments/presentation/pages/register_evidence_page.dart';
 
 import '../ambulance_reviews/presentation/pages/ambulance_reviews_list_page.dart';
+import '../assignments/presentation/pages/approve_reports_page.dart';
 
 /// Pantalla principal tras el login.
 /// Muestra contenido distinto según el rol del usuario.
@@ -205,7 +206,14 @@ class _HomeContent extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const AssignmentsPage()),
             ),
           ),
-          const _ActionCard(icon: Icons.fact_check, label: 'Aprobar reportes'),
+          _ActionCard(
+            icon: Icons.fact_check,
+            label: 'Aprobar reportes',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ApproveReportsPage()),
+            ),
+          ),
         ];
       case 'auxiliar':
         return [

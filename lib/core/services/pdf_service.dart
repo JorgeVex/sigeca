@@ -32,6 +32,10 @@ class PdfService {
     required List<PdfAreaData> areas,
     Uint8List? auxiliarSignature,
     Uint8List? logo,
+    Uint8List? jefeSignature,     // firma de la jefe (si aprobó)
+    String? jefeDocument,         // cédula de la jefe
+    bool isApproved = false,      // ¿ya fue aprobado?
+    DateTime? approvedAt,         // fecha de aprobación
   }) async {
     final doc = pw.Document();
 
@@ -70,6 +74,10 @@ class PdfService {
               cedula: cedula,
               jefeName: jefeName,
               auxiliarSignature: auxiliarSignature,
+              jefeSignature: jefeSignature,
+              jefeCedula: jefeDocument,
+              isApproved: isApproved,
+              approvedAt: approvedAt,
             ),
           ];
         },
@@ -341,11 +349,16 @@ class PdfService {
   }
 
   // ======================= FIRMAS =======================
+  /// Sección final: declaración de veracidad + firmas (auxiliar y jefe).
   pw.Widget _buildSignatureSection({
     required String auxiliarName,
     required String cedula,
     required String jefeName,
     Uint8List? auxiliarSignature,
+    Uint8List? jefeSignature,
+    String? jefeCedula,
+    bool isApproved = false,
+    DateTime? approvedAt,
   }) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -370,6 +383,7 @@ class PdfService {
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
+            // Firma del auxiliar.
             pw.Expanded(
               child: _signatureBlock(
                 signature: auxiliarSignature,
@@ -380,13 +394,19 @@ class PdfService {
               ),
             ),
             pw.SizedBox(width: 24),
+            // Firma de la jefe: real si aprobó, "pendiente" si no.
             pw.Expanded(
               child: _signatureBlock(
-                signature: null,
+                signature: isApproved ? jefeSignature : null,
                 name: jefeName,
-                line2: null,
+                line2: isApproved && jefeCedula != null && jefeCedula.isNotEmpty
+                    ? 'C.C. $jefeCedula'
+                    : null,
                 role: 'Jefe de Enfermería',
-                pending: true,
+                pending: !isApproved,
+                approvedLabel: isApproved && approvedAt != null
+                    ? 'Aprobado el ${_formatDate(approvedAt)}'
+                    : null,
               ),
             ),
           ],
@@ -401,6 +421,7 @@ class PdfService {
     String? line2,
     required String role,
     required bool pending,
+    String? approvedLabel,
   }) {
     return pw.Column(
       children: [
@@ -435,6 +456,10 @@ class PdfService {
         pw.Text(role,
             style: pw.TextStyle(fontSize: 9, color: grisTexto),
             textAlign: pw.TextAlign.center),
+        if (approvedLabel != null)
+          pw.Text(approvedLabel,
+              style: pw.TextStyle(fontSize: 8, color: verdePrincipal),
+              textAlign: pw.TextAlign.center),
       ],
     );
   }

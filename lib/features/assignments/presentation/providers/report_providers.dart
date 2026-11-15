@@ -75,3 +75,10 @@ final ambulancePhotosProvider = FutureProvider.family
   final repository = ref.watch(reportRepositoryProvider);
   return repository.fetchAmbulancePhotos(ambGroupId);
 });
+
+/// Reportes pendientes de aprobación (para la jefe).
+final pendingApprovalProvider =
+    FutureProvider.autoDispose<List<PendingReport>>((ref) async {
+  final repository = ref.watch(reportRepositoryProvider);
+  return repository.fetchPendingApproval();
+});

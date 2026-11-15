@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
 import '../../data/models/report_model.dart';
-import '../../../auth/presentation/providers/auth_providers.dart';
 import '../providers/report_providers.dart';
 
 import 'package:flutter/services.dart' show rootBundle;
+
 /// Pantalla de previsualización del PDF del reporte.
 /// Muestra el documento renderizado y permite compartirlo.
 class ReportPreviewPage extends ConsumerWidget {
@@ -25,58 +25,98 @@ class ReportPreviewPage extends ConsumerWidget {
         foregroundColor: Colors.white,
       ),
       body: PdfPreview(
-        // Genera el PDF (bytes) cuando la pantalla se construye.
         build: (format) => _buildPdf(ref),
-        // Nombre sugerido al compartir/guardar.
         pdfFileName: 'reporte_semana_${report.weekNumber}.pdf',
-        // Ajustes de la barra de acciones.
         canChangePageFormat: false,
         canChangeOrientation: false,
         canDebug: false,
-        // Deja visible el botón de compartir (viene por defecto).
         allowSharing: true,
         allowPrinting: true,
       ),
     );
   }
 
-  /// Arma el PDF: descarga las fotos, la firma, y genera el documento.
+  /// Arma el PDF: descarga fotos, firmas, logo, y genera el documento.
+  /// Recarga el reporte FRESCO de la BD para tener su estado actual
+  /// (aprobado/rechazado), sin depender del objeto que llegó a la pantalla.
   Future<Uint8List> _buildPdf(WidgetRef ref) async {
     final repo = ref.read(reportRepositoryProvider);
     final storage = ref.read(storageServiceProvider);
     final pdfService = ref.read(pdfServiceProvider);
-    final profile = ref.read(currentProfileProvider).value;
+
+    // Reporte fresco (estado actual).
+    ReportModel freshReport;
+    try {
+      freshReport = await repo.fetchReportById(report.id);
+    } catch (_) {
+      freshReport = report; // si falla, usa el que llegó
+    }
 
     final areasData = await repo.buildPdfData(report.id);
 
-    // Descargar la firma del auxiliar desde Storage (si existe).
-    Uint8List? signatureBytes;
-    final signaturePath = profile?.signatureUrl;
-    if (signaturePath != null && signaturePath.isNotEmpty) {
-      try {
-        signatureBytes = await storage.downloadPhoto(signaturePath);
-      } catch (_) {
-        signatureBytes = null; // si falla, el PDF sale sin imagen de firma
+    // --- Datos del auxiliar dueño del reporte ---
+    String auxiliarName = 'Auxiliar';
+    String auxiliarDocument = '';
+    Uint8List? auxiliarSignature;
+
+    try {
+      final aux = await repo.fetchReportAuxiliar(report.id);
+      if (aux != null) {
+        auxiliarName = aux['full_name'] as String? ?? 'Auxiliar';
+        auxiliarDocument = aux['document_id'] as String? ?? '';
+        final sigPath = aux['signature_url'] as String?;
+        if (sigPath != null && sigPath.isNotEmpty) {
+          auxiliarSignature = await storage.downloadPhoto(sigPath);
+        }
       }
+    } catch (_) {
+      // si falla, el PDF sale con valores por defecto
     }
 
-    Uint8List logoBytes;
+    // --- Logo institucional ---
+    Uint8List? logoBytes;
     try {
       final data = await rootBundle.load('assets/images/logoese.png');
       logoBytes = data.buffer.asUint8List();
     } catch (_) {
-      logoBytes = Uint8List(0); // si falla, el PDF sale sin logo
+      logoBytes = null;
+    }
+
+    // --- Datos de la jefe (solo si el reporte está aprobado) ---
+    String jefeName = 'Jefe de Enfermería';
+    String? jefeDocument;
+    Uint8List? jefeSignatureBytes;
+
+    if (freshReport.isApproved && freshReport.approvedBy != null) {
+      try {
+        final jefeData =
+            await repo.fetchProfileSignature(freshReport.approvedBy!);
+        if (jefeData != null) {
+          jefeName = jefeData['full_name'] as String? ?? jefeName;
+          jefeDocument = jefeData['document_id'] as String?;
+          final jefeSigPath = jefeData['signature_url'] as String?;
+          if (jefeSigPath != null && jefeSigPath.isNotEmpty) {
+            jefeSignatureBytes = await storage.downloadPhoto(jefeSigPath);
+          }
+        }
+      } catch (_) {
+        // si falla, el PDF sale sin firma de jefe
+      }
     }
 
     return pdfService.generateWeeklyReport(
-      auxiliarName: profile?.fullName ?? 'Auxiliar',
-      auxiliarDocument: profile?.documentId ?? '',
-      jefeName: 'Jefe de Enfermería',
-      weekNumber: report.weekNumber,
+      auxiliarName: auxiliarName,
+      auxiliarDocument: auxiliarDocument,
+      jefeName: jefeName,
+      weekNumber: freshReport.weekNumber,
       generatedAt: DateTime.now(),
       areas: areasData,
-      auxiliarSignature: signatureBytes,
+      auxiliarSignature: auxiliarSignature,
       logo: logoBytes,
+      jefeSignature: jefeSignatureBytes,
+      jefeDocument: jefeDocument,
+      isApproved: freshReport.isApproved,
+      approvedAt: freshReport.approvedAt,
     );
   }
 }

@@ -328,37 +328,50 @@ class ReportRepository {
   }
 
   /// Prepara los datos de un reporte para generar el PDF.
-  /// Descarga las fotos EN PARALELO para máxima velocidad.
+  /// Incluye áreas Y ambulancias. Descarga las fotos EN PARALELO.
   Future<List<PdfAreaData>> buildPdfData(String reportId) async {
+    // --- Áreas ---
     final groups = await fetchAreaGroups(reportId);
-
-    // Procesar cada área en paralelo.
     final areasFutures = groups.map((group) async {
       final photos = await fetchPhotos(group.id);
-
-      // Lanzar TODAS las descargas de este área a la vez.
       final photoFutures = photos.map((photo) async {
         try {
           return await _storageService.downloadPhoto(photo.photoUrl);
         } catch (_) {
-          return null; // si una falla, se omite
+          return null;
         }
       }).toList();
-
-      // Esperar a que todas las fotos del área terminen juntas.
       final results = await Future.wait(photoFutures);
-
-      // Filtrar las que fallaron (null).
       final photoBytes = results.whereType<Uint8List>().toList();
-
       return PdfAreaData(
         areaName: group.areaName,
         photos: photoBytes,
       );
     }).toList();
 
-    // Esperar a que todas las áreas terminen.
-    return Future.wait(areasFutures);
+    // --- Ambulancias ---
+    final ambGroups = await fetchAmbulanceGroups(reportId);
+    final ambFutures = ambGroups.map((amb) async {
+      final photos = await fetchAmbulancePhotos(amb.id);
+      final photoFutures = photos.map((photo) async {
+        try {
+          return await _storageService.downloadPhoto(photo.photoUrl);
+        } catch (_) {
+          return null;
+        }
+      }).toList();
+      final results = await Future.wait(photoFutures);
+      final photoBytes = results.whereType<Uint8List>().toList();
+      return PdfAreaData(
+        areaName: 'Ambulancia ${amb.plate}',
+        photos: photoBytes,
+      );
+    }).toList();
+
+    // Esperar áreas y ambulancias, y combinarlas (áreas primero).
+    final areas = await Future.wait(areasFutures);
+    final ambulances = await Future.wait(ambFutures);
+    return [...areas, ...ambulances];
   }
 
     // ============================================
@@ -442,4 +455,111 @@ class ReportRepository {
     await _recountAmbulancePhotos(ambGroupId);
   }
 
+    // ============================================
+  // APROBACIÓN (perfil jefe)
+  // ============================================
+
+  /// Trae los reportes pendientes de aprobación (status = completado),
+  /// con nombre del auxiliar y periodo, para la jefe.
+  Future<List<PendingReport>> fetchPendingApproval() async {
+    final data = await _client
+        .from('reports')
+        .select('''
+          *,
+          assignments:assignment_id (
+            period_year, period_month,
+            profiles:auxiliar_id (full_name)
+          )
+        ''')
+        .eq('status', 'completado')
+        .order('completed_at', ascending: true);
+
+    return (data as List).map((j) {
+      final json = j as Map<String, dynamic>;
+      final assignment = json['assignments'] as Map<String, dynamic>?;
+      final profile = assignment?['profiles'] as Map<String, dynamic>?;
+      return PendingReport(
+        report: ReportModel.fromJson(json),
+        auxiliarName: profile?['full_name'] as String? ?? 'Auxiliar',
+        periodYear: assignment?['period_year'] as int? ?? 0,
+        periodMonth: assignment?['period_month'] as int? ?? 0,
+      );
+    }).toList();
+  }
+
+  /// La jefe aprueba un reporte.
+  Future<void> approveReport({
+    required String reportId,
+    required String jefeId,
+  }) async {
+    await _client.from('reports').update({
+      'status': 'aprobado',
+      'approved_by': jefeId,
+      'approved_at': DateTime.now().toIso8601String(),
+      'reviewed_at': DateTime.now().toIso8601String(),
+      'rejection_reason': null, // limpia cualquier rechazo previo
+    }).eq('id', reportId);
+  }
+
+  /// La jefe rechaza un reporte con un motivo.
+  Future<void> rejectReport({
+    required String reportId,
+    required String reason,
+  }) async {
+    await _client.from('reports').update({
+      'status': 'rechazado',
+      'rejection_reason': reason,
+      'reviewed_at': DateTime.now().toIso8601String(),
+    }).eq('id', reportId);
+  }
+
+  /// Trae los datos del auxiliar dueño de un reporte (vía su asignación).
+  /// Sirve para el PDF, sin depender de quién lo esté generando.
+  Future<Map<String, dynamic>?> fetchReportAuxiliar(String reportId) async {
+    final data = await _client
+        .from('reports')
+        .select('''
+          assignments:assignment_id (
+            profiles:auxiliar_id (full_name, document_id, signature_url)
+          )
+        ''')
+        .eq('id', reportId)
+        .maybeSingle();
+
+    final assignment = data?['assignments'] as Map<String, dynamic>?;
+    return assignment?['profiles'] as Map<String, dynamic>?;
+  }
+  /// Trae datos de firma de un perfil (para la firma de la jefe en el PDF).
+  Future<Map<String, dynamic>?> fetchProfileSignature(String profileId) async {
+    final data = await _client
+        .from('profiles')
+        .select('full_name, document_id, signature_url')
+        .eq('id', profileId)
+        .maybeSingle();
+    return data;
+  }
+  /// Trae un reporte por su id, con su estado actual (fresco de la BD).
+  Future<ReportModel> fetchReportById(String reportId) async {
+    final data = await _client
+        .from('reports')
+        .select()
+        .eq('id', reportId)
+        .single();
+    return ReportModel.fromJson(data);
+  }
+}
+
+/// Un reporte pendiente de aprobación, con datos del auxiliar para mostrar.
+class PendingReport {
+  final ReportModel report;
+  final String auxiliarName;
+  final int periodYear;
+  final int periodMonth;
+
+  PendingReport({
+    required this.report,
+    required this.auxiliarName,
+    required this.periodYear,
+    required this.periodMonth,
+  });
 }

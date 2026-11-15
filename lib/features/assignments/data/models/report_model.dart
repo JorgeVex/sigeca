@@ -52,9 +52,13 @@ class ReportModel {
   final String id;
   final String assignmentId;
   final int weekNumber;
-  final String status;       // 'en_progreso' | 'completado'
+  final String status; // en_progreso | completado | aprobado | rechazado
   final String? pdfUrl;
   final DateTime? completedAt;
+  final String? approvedBy;
+  final DateTime? approvedAt;
+  final String? rejectionReason;
+  final DateTime? reviewedAt;
 
   const ReportModel({
     required this.id,
@@ -63,9 +67,17 @@ class ReportModel {
     required this.status,
     this.pdfUrl,
     this.completedAt,
+    this.approvedBy,
+    this.approvedAt,
+    this.rejectionReason,
+    this.reviewedAt,
   });
 
   bool get isCompleted => status == 'completado';
+  bool get isApproved => status == 'aprobado';
+  bool get isRejected => status == 'rechazado';
+  // "Pendiente de aprobación" = cerrado por el auxiliar pero sin revisar.
+  bool get isPendingApproval => status == 'completado';
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
     return ReportModel(
@@ -77,9 +89,18 @@ class ReportModel {
       completedAt: json['completed_at'] != null
           ? DateTime.parse(json['completed_at'] as String)
           : null,
+      approvedBy: json['approved_by'] as String?,
+      approvedAt: json['approved_at'] != null
+          ? DateTime.parse(json['approved_at'] as String)
+          : null,
+      rejectionReason: json['rejection_reason'] as String?,
+      reviewedAt: json['reviewed_at'] != null
+          ? DateTime.parse(json['reviewed_at'] as String)
+          : null,
     );
   }
 }
+
 
 /// El grupo de fotos de una ambulancia dentro de un reporte.
 class ReportAmbulancePhotos {

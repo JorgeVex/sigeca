@@ -120,8 +120,11 @@ class _MonthReportsPage extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(child: Text('Error: $err')),
         data: (reports) {
-          final completed = reports.where((r) => r.isCompleted).toList()
-            ..sort((a, b) => a.weekNumber.compareTo(b.weekNumber));
+          final completed = reports
+          .where((r) =>
+            r.isCompleted || r.isApproved || r.isRejected)
+          .toList()
+          ..sort((a, b) => a.weekNumber.compareTo(b.weekNumber));
 
           if (completed.isEmpty) {
             return const Center(

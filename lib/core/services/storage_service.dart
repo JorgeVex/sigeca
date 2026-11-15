@@ -13,7 +13,7 @@ class StorageService {
 
   static const String _bucket = 'evidences';
 
-    /// Genera un nombre único: timestamp + aleatorio, para evitar
+  /// Genera un nombre único: timestamp + aleatorio, para evitar
   /// colisiones cuando se suben varias fotos en el mismo instante.
   String _uniqueName() {
     final ts = DateTime.now().millisecondsSinceEpoch;
@@ -28,14 +28,11 @@ class StorageService {
     required String reportId,
     required String areaId,
   }) async {
-    // Nombre único para el archivo, usando la marca de tiempo.
     final fileName = _uniqueName();
 
-
-    // Ruta organizada: reportes/<reportId>/<areaId>/<archivo>.
+    // Ruta organizada: reports/<reportId>/<areaId>/<archivo>.
     final path = 'reports/$reportId/$areaId/$fileName';
 
-    // Lee los bytes de la foto y la sube.
     final bytes = await File(photo.path).readAsBytes();
 
     await _client.storage.from(_bucket).uploadBinary(
@@ -63,12 +60,13 @@ class StorageService {
   Future<void> deletePhoto(String path) async {
     await _client.storage.from(_bucket).remove([path]);
   }
-/// Sube una foto de insumo al bucket, organizada por insumo.
+
+  /// Sube una foto de insumo al bucket, organizada por insumo.
   Future<String> uploadSupplyPhoto({
     required XFile photo,
     required String assignmentSupplyId,
   }) async {
-    final path = _uniqueName();
+    final path = 'supplies/$assignmentSupplyId/${_uniqueName()}';
 
     final bytes = await File(photo.path).readAsBytes();
 
@@ -83,10 +81,13 @@ class StorageService {
 
     return path;
   }
-  Future <Uint8List> downloadPhoto(String path) async {
+
+  /// Descarga los bytes de un archivo por su ruta.
+  Future<Uint8List> downloadPhoto(String path) async {
     final bytes = await _client.storage.from(_bucket).download(path);
     return bytes;
   }
+
   /// Sube la firma de un usuario al bucket, en su propia carpeta.
   /// Devuelve la ruta del archivo guardado.
   Future<String> uploadSignature({
@@ -110,7 +111,7 @@ class StorageService {
     return path;
   }
 
-    /// Sube una foto de aseo de ambulancia, organizada por reporte y ambulancia.
+  /// Sube una foto de aseo de ambulancia, organizada por reporte y ambulancia.
   Future<String> uploadAmbulancePhoto({
     required XFile photo,
     required String reportId,
@@ -129,6 +130,4 @@ class StorageService {
         );
     return path;
   }
-
-
 }
