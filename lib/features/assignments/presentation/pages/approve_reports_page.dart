@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../data/models/report_model.dart';
+import '../../data/repositories/report_repository.dart';
 import '../providers/report_providers.dart';
 import 'report_preview_page.dart';
 
@@ -10,22 +12,21 @@ const _months = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
 
-/// Pantalla de la jefe: lista los reportes pendientes de aprobación
-/// y permite aprobarlos o rechazarlos con un motivo.
+/// NIVEL 1 — Lista de auxiliares del equipo, con semáforo de progreso.
 class ApproveReportsPage extends ConsumerWidget {
   const ApproveReportsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pendingAsync = ref.watch(pendingApprovalProvider);
+    final auxAsync = ref.watch(teamAuxiliaresProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Aprobar reportes'),
+        title: const Text('Reportes del equipo'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
-      body: pendingAsync.when(
+      body: auxAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(
           child: Padding(
@@ -33,23 +34,14 @@ class ApproveReportsPage extends ConsumerWidget {
             child: Text('Error al cargar:\n$err', textAlign: TextAlign.center),
           ),
         ),
-        data: (pending) {
-          if (pending.isEmpty) {
+        data: (auxiliares) {
+          if (auxiliares.isEmpty) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.inbox, size: 64, color: Colors.grey),
-                    SizedBox(height: 16),
-                    Text(
-                      'No hay reportes pendientes de aprobación.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ],
-                ),
+                child: Text('No hay auxiliares con asignación este mes.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey)),
               ),
             );
           }
@@ -61,12 +53,218 @@ class ApproveReportsPage extends ConsumerWidget {
               top: 16,
               bottom: MediaQuery.of(context).padding.bottom + 24,
             ),
-            itemCount: pending.length,
+            itemCount: auxiliares.length,
             itemBuilder: (context, index) {
-              final p = pending[index];
-              final mes = (p.periodMonth >= 1 && p.periodMonth <= 12)
-                  ? _months[p.periodMonth - 1]
-                  : '';
+              final aux = auxiliares[index];
+              final info = _statusInfo(aux.status);
+              return Card(
+                elevation: 2,
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: info.color,
+                    child: Icon(info.icon, color: Colors.white),
+                  ),
+                  title: Text(aux.auxiliarName,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(
+                    '${aux.closedCount} de ${TeamAuxiliar.expectedPerMonth} semanas · ${info.label}',
+                    style: TextStyle(color: info.color),
+                  ),
+                  trailing: aux.pendingCount > 0
+                      ? Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: Colors.orange,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text('${aux.pendingCount}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _AuxiliarFoldersPage(
+                          auxiliarId: aux.auxiliarId,
+                          auxiliarName: aux.auxiliarName,
+                        ),
+                      ),
+                    ).then((_) => ref.invalidate(teamAuxiliaresProvider));
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  _StatusInfo _statusInfo(TeamStatus status) {
+    switch (status) {
+      case TeamStatus.pending:
+        return _StatusInfo(Colors.orange, Icons.pending_actions, 'Por revisar');
+      case TeamStatus.inProgress:
+        return _StatusInfo(Colors.blue, Icons.hourglass_bottom, 'En progreso');
+      case TeamStatus.done:
+        return _StatusInfo(Colors.green, Icons.check, 'Al día');
+      case TeamStatus.notStarted:
+        return _StatusInfo(Colors.grey, Icons.remove, 'Sin empezar');
+    }
+  }
+}
+
+/// NIVEL 2 — Carpetas (meses) de un auxiliar.
+class _AuxiliarFoldersPage extends ConsumerWidget {
+  final String auxiliarId;
+  final String auxiliarName;
+
+  const _AuxiliarFoldersPage({
+    required this.auxiliarId,
+    required this.auxiliarName,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final foldersAsync = ref.watch(auxiliarFoldersProvider(auxiliarId));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(auxiliarName),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+      ),
+      body: foldersAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, _) => Center(child: Text('Error: $err')),
+        data: (folders) {
+          if (folders.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Este auxiliar no tiene carpetas.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 24,
+            ),
+            itemCount: folders.length,
+            itemBuilder: (context, index) {
+              final f = folders[index];
+              final mes = (f.periodMonth >= 1 && f.periodMonth <= 12)
+                  ? _months[f.periodMonth - 1]
+                  : 'Mes ${f.periodMonth}';
+              final hasPending = f.pendingCount > 0;
+              return Card(
+                elevation: 2,
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: hasPending ? Colors.orange : Colors.teal,
+                    child: const Icon(Icons.folder, color: Colors.white),
+                  ),
+                  title: Text('$mes ${f.periodYear}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(hasPending
+                      ? '${f.pendingCount} por revisar'
+                      : 'Ver reportes'),
+                  trailing: hasPending
+                      ? Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: Colors.orange,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text('${f.pendingCount}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _FolderReportsPage(
+                          assignmentId: f.assignmentId,
+                          title: '$auxiliarName — $mes ${f.periodYear}',
+                        ),
+                      ),
+                    ).then((_) =>
+                        ref.invalidate(auxiliarFoldersProvider(auxiliarId)));
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// NIVEL 3 — Reportes de una carpeta (todos los estados).
+class _FolderReportsPage extends ConsumerWidget {
+  final String assignmentId;
+  final String title;
+
+  const _FolderReportsPage({
+    required this.assignmentId,
+    required this.title,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reportsAsync = ref.watch(reportsListProvider(assignmentId));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title, style: const TextStyle(fontSize: 16)),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+      ),
+      body: reportsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, _) => Center(child: Text('Error: $err')),
+        data: (reports) {
+          final visible = reports
+              .where((r) => r.isCompleted || r.isApproved || r.isRejected)
+              .toList()
+            ..sort((a, b) => a.weekNumber.compareTo(b.weekNumber));
+
+          if (visible.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No hay reportes cerrados en este mes.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 24,
+            ),
+            itemCount: visible.length,
+            itemBuilder: (context, index) {
+              final report = visible[index];
               return Card(
                 elevation: 2,
                 margin: const EdgeInsets.only(bottom: 12),
@@ -77,9 +275,9 @@ class ApproveReportsPage extends ConsumerWidget {
                     children: [
                       Row(
                         children: [
-                          const CircleAvatar(
-                            backgroundColor: Colors.orange,
-                            child: Icon(Icons.pending_actions,
+                          CircleAvatar(
+                            backgroundColor: _statusColor(report),
+                            child: Icon(_statusIcon(report),
                                 color: Colors.white),
                           ),
                           const SizedBox(width: 12),
@@ -87,21 +285,20 @@ class ApproveReportsPage extends ConsumerWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(p.auxiliarName,
+                                Text('Semana ${report.weekNumber}',
                                     style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 15)),
-                                Text(
-                                    'Semana ${p.report.weekNumber} — $mes ${p.periodYear}',
-                                    style: const TextStyle(
-                                        color: Colors.grey, fontSize: 13)),
+                                Text(_statusLabel(report),
+                                    style: TextStyle(
+                                        color: _statusColor(report),
+                                        fontSize: 13)),
                               ],
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 12),
-                      // Botón ver PDF.
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
@@ -114,43 +311,44 @@ class ApproveReportsPage extends ConsumerWidget {
                               context,
                               MaterialPageRoute(
                                 builder: (_) =>
-                                    ReportPreviewPage(report: p.report),
+                                    ReportPreviewPage(report: report),
                               ),
                             );
                           },
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      // Botones aprobar / rechazar.
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
+                      if (report.isPendingApproval) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                                icon: const Icon(Icons.check),
+                                label: const Text('Aprobar'),
+                                onPressed: () =>
+                                    _approve(context, ref, report.id),
                               ),
-                              icon: const Icon(Icons.check),
-                              label: const Text('Aprobar'),
-                              onPressed: () =>
-                                  _approve(context, ref, p.report.id),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                ),
+                                icon: const Icon(Icons.close),
+                                label: const Text('Rechazar'),
+                                onPressed: () =>
+                                    _reject(context, ref, report.id),
                               ),
-                              icon: const Icon(Icons.close),
-                              label: const Text('Rechazar'),
-                              onPressed: () =>
-                                  _reject(context, ref, p.report.id),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -160,6 +358,30 @@ class ApproveReportsPage extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  Color _statusColor(ReportModel r) {
+    if (r.isApproved) return Colors.green;
+    if (r.isRejected) return Colors.red;
+    return Colors.orange;
+  }
+
+  IconData _statusIcon(ReportModel r) {
+    if (r.isApproved) return Icons.verified;
+    if (r.isRejected) return Icons.cancel;
+    return Icons.pending;
+  }
+
+  String _statusLabel(ReportModel r) {
+    if (r.isApproved) {
+      final d = r.approvedAt;
+      return d != null
+          ? 'Aprobado el ${d.day.toString().padLeft(2, '0')}/'
+              '${d.month.toString().padLeft(2, '0')}/${d.year}'
+          : 'Aprobado';
+    }
+    if (r.isRejected) return 'Rechazado: ${r.rejectionReason ?? 'sin motivo'}';
+    return 'Pendiente de aprobación';
   }
 
   Future<void> _approve(
@@ -190,7 +412,7 @@ class ApproveReportsPage extends ConsumerWidget {
       final repo = ref.read(reportRepositoryProvider);
       final jefeId = Supabase.instance.client.auth.currentUser!.id;
       await repo.approveReport(reportId: reportId, jefeId: jefeId);
-      ref.invalidate(pendingApprovalProvider);
+      ref.invalidate(reportsListProvider(assignmentId));
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Reporte aprobado.')),
@@ -223,7 +445,7 @@ class ApproveReportsPage extends ConsumerWidget {
               controller: controller,
               maxLines: 3,
               decoration: const InputDecoration(
-                hintText: 'Ej: Faltan fotos del área X / fotos poco claras...',
+                hintText: 'Ej: Faltan fotos del área X...',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -256,7 +478,7 @@ class ApproveReportsPage extends ConsumerWidget {
     try {
       final repo = ref.read(reportRepositoryProvider);
       await repo.rejectReport(reportId: reportId, reason: reason);
-      ref.invalidate(pendingApprovalProvider);
+      ref.invalidate(reportsListProvider(assignmentId));
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Reporte rechazado.')),
@@ -270,4 +492,12 @@ class ApproveReportsPage extends ConsumerWidget {
       }
     }
   }
+}
+
+/// Datos visuales de un estado del semáforo.
+class _StatusInfo {
+  final Color color;
+  final IconData icon;
+  final String label;
+  _StatusInfo(this.color, this.icon, this.label);
 }

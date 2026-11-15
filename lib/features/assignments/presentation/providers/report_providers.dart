@@ -82,3 +82,17 @@ final pendingApprovalProvider =
   final repository = ref.watch(reportRepositoryProvider);
   return repository.fetchPendingApproval();
 });
+
+/// Lista de auxiliares del equipo con sus pendientes (para la jefe).
+final teamAuxiliaresProvider =
+    FutureProvider.autoDispose<List<TeamAuxiliar>>((ref) async {
+  final repository = ref.watch(reportRepositoryProvider);
+  return repository.fetchTeamAuxiliares();
+});
+
+/// Carpetas (meses) de un auxiliar específico (para la jefe).
+final auxiliarFoldersProvider = FutureProvider.family
+    .autoDispose<List<TeamFolder>, String>((ref, auxiliarId) async {
+  final repository = ref.watch(reportRepositoryProvider);
+  return repository.fetchAuxiliarFolders(auxiliarId);
+});

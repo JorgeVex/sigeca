@@ -547,6 +547,112 @@ class ReportRepository {
         .single();
     return ReportModel.fromJson(data);
   }
+
+  /// Para la jefe: trae todos los auxiliares que tienen alguna asignación,
+  /// con el conteo de reportes pendientes de aprobar (status=completado).
+  /// Para la jefe: trae todos los auxiliares con asignación EN EL MES ACTUAL,
+  /// con su progreso (X de 4), pendientes y aprobados, para el semáforo.
+  Future<List<TeamAuxiliar>> fetchTeamAuxiliares() async {
+    final now = DateTime.now();
+    final year = now.year;
+    final month = now.month;
+
+    // 1. Asignaciones del mes actual (una por auxiliar).
+    final assignmentsData = await _client
+        .from('assignments')
+        .select('id, auxiliar_id, profiles:auxiliar_id (full_name)')
+        .eq('period_year', year)
+        .eq('period_month', month);
+
+    // Mapa auxiliar -> {assignmentId, nombre}
+    final List<Map<String, dynamic>> auxList = [];
+    for (final row in (assignmentsData as List)) {
+      final profile = row['profiles'] as Map<String, dynamic>?;
+      auxList.add({
+        'assignmentId': row['id'] as String,
+        'auxiliarId': row['auxiliar_id'] as String,
+        'name': profile?['full_name'] as String? ?? 'Auxiliar',
+      });
+    }
+
+    // 2. Para cada auxiliar, contar sus reportes por estado en el mes.
+    final result = <TeamAuxiliar>[];
+    for (final aux in auxList) {
+      final reports = await _client
+          .from('reports')
+          .select('status')
+          .eq('assignment_id', aux['assignmentId']);
+
+      int pending = 0; // completado = pendiente de aprobar
+      int approved = 0;
+      int closed = 0; // cerrados (completado+aprobado+rechazado)
+
+      for (final r in (reports as List)) {
+        final status = r['status'] as String;
+        if (status == 'completado') {
+          pending++;
+          closed++;
+        } else if (status == 'aprobado') {
+          approved++;
+          closed++;
+        } else if (status == 'rechazado') {
+          closed++;
+        }
+      }
+
+      result.add(TeamAuxiliar(
+        auxiliarId: aux['auxiliarId'] as String,
+        auxiliarName: aux['name'] as String,
+        pendingCount: pending,
+        approvedCount: approved,
+        closedCount: closed,
+      ));
+    }
+
+    // Ordenar: pendientes primero, luego los que menos han avanzado,
+    // luego alfabético.
+    result.sort((a, b) {
+      if (a.pendingCount != b.pendingCount) {
+        return b.pendingCount.compareTo(a.pendingCount);
+      }
+      if (a.closedCount != b.closedCount) {
+        return a.closedCount.compareTo(b.closedCount);
+      }
+      return a.auxiliarName.compareTo(b.auxiliarName);
+    });
+
+    return result;
+  }
+  /// Para la jefe: trae TODAS las asignaciones (carpetas/meses) de un
+  /// auxiliar, con el conteo de pendientes de cada una.
+  /// Para la jefe: trae TODAS las asignaciones (carpetas/meses) de un
+  /// auxiliar, con el conteo de pendientes de cada una.
+  Future<List<TeamFolder>> fetchAuxiliarFolders(String auxiliarId) async {
+    final data = await _client
+        .from('assignments')
+        .select('id, period_year, period_month')
+        .eq('auxiliar_id', auxiliarId)
+        .order('period_year', ascending: false)
+        .order('period_month', ascending: false);
+
+    final folders = <TeamFolder>[];
+    for (final row in (data as List)) {
+      final assignmentId = row['id'] as String;
+      final reports = await _client
+          .from('reports')
+          .select('id')
+          .eq('assignment_id', assignmentId)
+          .eq('status', 'completado');
+      folders.add(TeamFolder(
+        assignmentId: assignmentId,
+        periodYear: row['period_year'] as int,
+        periodMonth: row['period_month'] as int,
+        pendingCount: (reports as List).length,
+      ));
+    }
+    return folders;
+  }
+
 }
 
 /// Un reporte pendiente de aprobación, con datos del auxiliar para mostrar.
@@ -561,5 +667,52 @@ class PendingReport {
     required this.auxiliarName,
     required this.periodYear,
     required this.periodMonth,
+  });
+}
+
+/// Un auxiliar del equipo, con su conteo de reportes pendientes.
+/// Un auxiliar del equipo, con su progreso del mes para el semáforo.
+class TeamAuxiliar {
+  final String auxiliarId;
+  final String auxiliarName;
+  final int pendingCount;   // reportes esperando aprobación
+  final int approvedCount;  // reportes aprobados
+  final int closedCount;    // reportes cerrados (de 4)
+
+  TeamAuxiliar({
+    required this.auxiliarId,
+    required this.auxiliarName,
+    required this.pendingCount,
+    this.approvedCount = 0,
+    this.closedCount = 0,
+  });
+
+  /// Total de reportes esperados por mes.
+  static const int expectedPerMonth = 4;
+
+  /// Estado del semáforo según el progreso.
+  TeamStatus get status {
+    if (pendingCount > 0) return TeamStatus.pending;        // naranja
+    if (closedCount == 0) return TeamStatus.notStarted;     // gris
+    if (approvedCount >= expectedPerMonth) return TeamStatus.done; // verde
+    return TeamStatus.inProgress;                            // azul
+  }
+}
+
+/// Estado del semáforo de un auxiliar.
+enum TeamStatus { pending, inProgress, done, notStarted }
+
+/// Una carpeta (mes) de un auxiliar, con su conteo de pendientes.
+class TeamFolder {
+  final String assignmentId;
+  final int periodYear;
+  final int periodMonth;
+  final int pendingCount;
+
+  TeamFolder({
+    required this.assignmentId,
+    required this.periodYear,
+    required this.periodMonth,
+    required this.pendingCount,
   });
 }

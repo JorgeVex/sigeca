@@ -208,7 +208,7 @@ class _HomeContent extends StatelessWidget {
           ),
           _ActionCard(
             icon: Icons.fact_check,
-            label: 'Aprobar reportes',
+            label: 'Reportes del equipo',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ApproveReportsPage()),
